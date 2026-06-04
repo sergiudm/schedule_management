@@ -70,6 +70,9 @@ rmd add "Biology homework" 9 1
 rmd sync
 ```
 
+Set `show_tasks_after_add = true` under `[settings]` if you want every
+successful `rmd add ...` to immediately print the same task table as `rmd ls`.
+
 `rmd sync` reads `tasks/tasks.json`, proposes task assignments for today's
 pomodoro/potato blocks, and regenerates if you reject the preview with
 feedback.

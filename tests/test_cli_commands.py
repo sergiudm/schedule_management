@@ -1044,6 +1044,69 @@ class TestTaskManagement:
         assert saved_tasks[0]["description"] == "Complete project"
         assert saved_tasks[0]["priority"] == 7
 
+    @patch("schedule_management.commands.tasks.show_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_add_task_does_not_display_list_by_default(
+        self,
+        mock_load_tasks,
+        mock_save_tasks,
+        mock_show_tasks,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Test that adding a task keeps the current quiet output by default."""
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+        monkeypatch.setattr(
+            "schedule_management.commands.tasks.SETTINGS_PATH",
+            str(tmp_path / "missing-settings.toml"),
+        )
+
+        args = MagicMock()
+        args.task = "Complete project"
+        args.priority = 7
+        args.postpone = None
+
+        result = reminder.add_task(args)
+
+        assert result == 0
+        mock_show_tasks.assert_not_called()
+
+    @patch("schedule_management.commands.tasks.show_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_add_task_displays_list_when_config_enabled(
+        self,
+        mock_load_tasks,
+        mock_save_tasks,
+        mock_show_tasks,
+        tmp_path,
+        monkeypatch,
+    ):
+        """Test that add displays the task list after a successful save when enabled."""
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+        settings_path = tmp_path / "settings.toml"
+        settings_path.write_text(
+            "[settings]\nshow_tasks_after_add = true\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(
+            "schedule_management.commands.tasks.SETTINGS_PATH",
+            str(settings_path),
+        )
+
+        args = MagicMock()
+        args.task = "Complete project"
+        args.priority = 7
+        args.postpone = None
+
+        result = reminder.add_task(args)
+
+        assert result == 0
+        mock_show_tasks.assert_called_once_with(args)
+
     @patch("schedule_management.commands.tasks.load_tasks")
     @patch("schedule_management.commands.tasks.save_tasks")
     def test_add_task_duplicate(self, mock_save_tasks, mock_load_tasks):
@@ -1852,8 +1915,8 @@ class TestTaskManagement:
             if hasattr(cell, "plain") and cell.plain.startswith("⏳ ")
         ]
         assert len(procrastinated_cells) == 1
-        assert procrastinated_cells[0].plain == "⏳ Delayed task (3 days)"
-        assert procrastinated_cells[0].style == "italic dim"
+        assert procrastinated_cells[0].plain == "⏳ Delayed task (3 days overdue)"
+        assert procrastinated_cells[0].style == "bold red"
 
     @patch("schedule_management.commands.tasks.load_tasks")
     @patch("schedule_management.commands.tasks.load_procrastinate_records")
@@ -1901,9 +1964,9 @@ class TestTaskManagement:
         ]
         assert len(postponed_cells) == 2
         # Highest priority first
-        assert postponed_cells[0].plain == "💤 Task tomorrow (1 day left)"
+        assert postponed_cells[0].plain == "💤 Task tomorrow (coming tomorrow)"
         assert postponed_cells[0].style == "italic dim"
-        assert postponed_cells[1].plain == "💤 Task in 2 days (2 days left)"
+        assert postponed_cells[1].plain == "💤 Task in 2 days (coming in 2 days)"
         assert postponed_cells[1].style == "italic dim"
 
 
@@ -1973,12 +2036,12 @@ class TestTaskManagement:
         # 6. 💤 Task 6 (inc 2) (2 days left)
 
         assert len(added_rows) == 6
-        assert added_rows[0] == "⏳ Task 4 (proc 8) (3 days)"
-        assert added_rows[1] == "⏳ Task 1 (proc 5) (3 days)"
+        assert added_rows[0] == "⏳ Task 4 (proc 8) (3 days overdue)"
+        assert added_rows[1] == "⏳ Task 1 (proc 5) (3 days overdue)"
         assert added_rows[2] == "Task 2 (curr 9)"
         assert added_rows[3] == "Task 5 (curr 3)"
-        assert added_rows[4] == "💤 Task 3 (inc 10) (2 days left)"
-        assert added_rows[5] == "💤 Task 6 (inc 2) (2 days left)"
+        assert added_rows[4] == "💤 Task 3 (inc 10) (coming in 2 days)"
+        assert added_rows[5] == "💤 Task 6 (inc 2) (coming in 2 days)"
 
 
     @patch("schedule_management.commands.tasks.log_task_action")

@@ -294,7 +294,7 @@ class ScheduleRunner:
             return _t("Procrastinated for 1 day")
         return _t("Procrastinated for {age_days} days").format(age_days=age_days)
 
-    def _prompt_urgent_tasks(self) -> None:
+    def _prompt_urgent_tasks(self, is_last_time: bool = False) -> None:
         """Ask for completion of urgent tasks one-by-one and sync procrastinate list."""
         if not hasattr(self, "_urgent_task_prompt_lock"):
             self._urgent_task_prompt_lock = threading.Lock()
@@ -305,20 +305,28 @@ class ScheduleRunner:
         try:
             tasks = load_tasks()
             today = datetime.now().date()
-            urgent_tasks = [
-                task
-                for task in tasks
-                if isinstance(task, dict)
-                and self._task_priority(task) > 7
-                and not self._is_task_postponed(task, today)
-            ]
+            procrastinate_records = load_procrastinate_records()
+            procrastinate_list = set(procrastinate_records)
+
+            urgent_tasks = []
+            for task in tasks:
+                if not isinstance(task, dict):
+                    continue
+                if self._is_task_postponed(task, today):
+                    continue
+
+                is_urgent = self._task_priority(task) > 7
+                is_overdue = task.get("description") in procrastinate_list
+
+                if is_urgent or is_overdue:
+                    urgent_tasks.append(task)
 
             if not urgent_tasks:
-                _log_runtime_event("Urgent task prompt found no unfinished high-priority tasks")
+                _log_runtime_event("Urgent task prompt found no unfinished high-priority or overdue tasks")
                 return
 
             _log_runtime_event(
-                f"Urgent task prompt opened for {len(urgent_tasks)} high-priority task(s)"
+                f"Urgent task prompt opened for {len(urgent_tasks)} task(s)"
             )
             urgent_tasks.sort(
                 key=lambda task: (
@@ -327,8 +335,6 @@ class ScheduleRunner:
                 )
             )
 
-            procrastinate_list = load_procrastinate_list()
-            procrastinate_records = load_procrastinate_records()
             tasks_changed = False
             procrastinate_changed = False
             total_tasks = len(urgent_tasks)
@@ -375,9 +381,10 @@ class ScheduleRunner:
                         procrastinate_list.discard(description)
                         procrastinate_changed = True
                 else:
-                    if description not in procrastinate_list:
-                        procrastinate_list.add(description)
-                        procrastinate_changed = True
+                    if is_last_time:
+                        if description not in procrastinate_list:
+                            procrastinate_list.add(description)
+                            procrastinate_changed = True
 
             if tasks_changed:
                 save_tasks(tasks)
@@ -445,7 +452,7 @@ class ScheduleRunner:
         )
         return urgent
 
-    def _check_urgent_tasks(self) -> None:
+    def _check_urgent_tasks(self, is_last_time: bool = False) -> None:
         """Prompt high-priority unfinished tasks one-by-one without blocking the run loop."""
         if not hasattr(self, "_urgent_task_prompt_lock"):
             self._urgent_task_prompt_lock = threading.Lock()
@@ -454,7 +461,7 @@ class ScheduleRunner:
             return
 
         _log_runtime_event("Urgent task check triggered")
-        threading.Thread(target=self._prompt_urgent_tasks, daemon=True).start()
+        threading.Thread(target=self._prompt_urgent_tasks, args=(is_last_time,), daemon=True).start()
 
     def _check_urgent_deadlines(self) -> None:
         """Show reminder for approaching deadlines."""
@@ -549,6 +556,7 @@ class ScheduleRunner:
             # -----------------------------------------------------------------
             if not self.config.should_skip_today():
                 # Check urgent tasks
+                sorted_urgent_times = sorted(self.config.daily_urgent_times) if self.config.daily_urgent_times else []
                 for urgent_time in self.config.daily_urgent_times:
                     urgent_tasks_key = f"urgent_tasks_{urgent_time}"
                     if (
@@ -558,7 +566,8 @@ class ScheduleRunner:
                         _log_runtime_event(
                             f"Scheduled urgent task check reached at {urgent_time}"
                         )
-                        self._check_urgent_tasks()
+                        is_last_time = (urgent_time == sorted_urgent_times[-1]) if sorted_urgent_times else False
+                        self._check_urgent_tasks(is_last_time=is_last_time)
                         self.notified_today.add(urgent_tasks_key)
 
                 # Check urgent deadlines

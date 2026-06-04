@@ -51,6 +51,16 @@ rmd add "Buy groceries" 3
 rmd add "Buy groceries" 6
 ```
 
+### Show the List After Adding
+By default, `rmd add` prints only the add/update confirmation. To always display
+the full `rmd ls` task table after a successful add or update, enable this in
+`settings.toml`:
+
+```toml
+[settings]
+show_tasks_after_add = true
+```
+
 ## rm
 
 Remove one or more tasks by description or ID.
@@ -108,8 +118,8 @@ Tasks you mark as **not completed** are recorded in a procrastinate list file:
 In `rmd ls`, procrastinated tasks are shown with:
 
 - A `⏳` prefix
-- A procrastination age label such as `(deferred today)` or `(3 days)`
-- A dim/italic text style
+- A procrastination age label such as `(deferred today)` or `(3 days overdue)`
+- A dim/italic style if deferred today, or a striking bold red style if overdue (1 or more days)
 
 In later urgent-task popups, the reminder also shows how many days the task has already been procrastinated.
 

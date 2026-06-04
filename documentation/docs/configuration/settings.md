@@ -33,6 +33,7 @@ language = "en"
 sound_file = "/System/Library/Sounds/Ping.aiff"
 alarm_interval = 5
 max_alarm_duration = 300
+show_tasks_after_add = false
 ```
 
 | Parameter | Type | Default | Description |
@@ -41,6 +42,7 @@ max_alarm_duration = 300
 | `sound_file` | string | `"/System/Library/Sounds/Ping.aiff"` | Path to the sound file for notifications |
 | `alarm_interval` | integer | `5` | Seconds between repeated alerts |
 | `max_alarm_duration` | integer | `300` | Maximum duration for alerts in seconds (5 minutes) |
+| `show_tasks_after_add` | boolean | `false` | When `true`, every successful `rmd add ...` immediately prints the same task table as `rmd ls`. |
 
 ### Advanced Settings
 

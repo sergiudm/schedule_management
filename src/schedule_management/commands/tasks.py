@@ -19,6 +19,9 @@ Example Usage (via CLI):
 import sys
 from datetime import datetime
 from typing import Any
+
+from schedule_management import SETTINGS_PATH
+from schedule_management.config import ScheduleConfig
 from schedule_management.i18n import _t
 
 try:
@@ -44,6 +47,14 @@ from schedule_management.data import (
 # =============================================================================
 # ADD TASK COMMAND
 # =============================================================================
+
+
+def _should_show_tasks_after_add() -> bool:
+    """Return whether the active settings request an `rmd ls` display after add."""
+    try:
+        return ScheduleConfig(str(SETTINGS_PATH)).show_tasks_after_add
+    except Exception:
+        return False
 
 
 def add_task(args) -> int:
@@ -131,11 +142,14 @@ def add_task(args) -> int:
     # Save tasks
     try:
         save_tasks(tasks)
-        print(action_msg)
-        return 0
     except Exception as e:
         print(_t("❌ Error saving task: {e}").format(e=e))
         return 1
+
+    print(action_msg)
+    if _should_show_tasks_after_add():
+        show_tasks(args)
+    return 0
 
 
 # =============================================================================
@@ -426,9 +440,11 @@ def show_tasks(args) -> int:
                 procrastinate_records.get(description, {}).get("since"),
                 today=today,
             )
+            # Make overdue tasks (1 or more days overdue) very striking
+            is_overdue = age_days is not None and age_days >= 1
             description_text = Text(
                 f"⏳ {description}{_format_procrastination_suffix(age_days)}",
-                style="italic dim",
+                style="bold red" if is_overdue else "italic dim",
             )
         else:
             description_text = Text(description)

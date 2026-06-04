@@ -77,6 +77,7 @@ on under the same config root.
 sound_file = "/System/Library/Sounds/Ping.aiff"
 alarm_interval = 5
 max_alarm_duration = 300
+show_tasks_after_add = false
 
 [time_blocks]
 pomodoro = 25

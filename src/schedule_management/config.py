@@ -130,6 +130,16 @@ class ScheduleConfig:
         """
         return self.settings.get("max_alarm_duration", 300)
 
+    @property
+    def show_tasks_after_add(self) -> bool:
+        """
+        Whether `rmd add` should print the task list after a successful save.
+
+        Returns:
+            True when explicitly enabled in settings, otherwise False.
+        """
+        return self.settings.get("show_tasks_after_add") is True
+
     # =========================================================================
     # SKIP DAYS
     # =========================================================================

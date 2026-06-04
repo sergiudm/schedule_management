@@ -468,7 +468,7 @@ class TestUrgentTasksProcrastinate:
 
         with patch.object(runner_module, "datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2026, 4, 8, 9, 0)
-            runner._prompt_urgent_tasks()
+            runner._prompt_urgent_tasks(is_last_time=True)
 
         updated_tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
         assert [task["description"] for task in updated_tasks] == [
@@ -486,6 +486,108 @@ class TestUrgentTasksProcrastinate:
         assert len(prompted_questions) == 2
         assert prompted_questions[1][0].endswith("Procrastinated for 2 days")
         assert logged_actions == [("deleted", "Task B")]
+
+    def test_prompt_urgent_tasks_not_last_time_does_not_add_to_procrastinate_list(
+        self, tmp_path, monkeypatch
+    ):
+        import json
+        from datetime import datetime
+        import threading
+
+        import schedule_management.runner as runner_module
+        import schedule_management.data.loaders as data_loaders
+
+        tasks_path = tmp_path / "tasks.json"
+        procrastinate_path = tmp_path / "procrastinate.json"
+
+        tasks_path.write_text(
+            json.dumps(
+                [
+                    {"description": "Task A", "priority": 9},
+                ]
+            ),
+            encoding="utf-8",
+        )
+        procrastinate_path.write_text(json.dumps([]), encoding="utf-8")
+
+        monkeypatch.setattr(data_loaders, "TASKS_PATH", str(tasks_path))
+        monkeypatch.setattr(data_loaders, "PROCRASTINATE_PATH", str(procrastinate_path))
+
+        monkeypatch.setattr(
+            runner_module,
+            "ask_yes_no",
+            lambda question, title: False,
+        )
+
+        runner = runner_module.ScheduleRunner.__new__(runner_module.ScheduleRunner)
+        runner._urgent_task_prompt_lock = threading.Lock()
+
+        with patch.object(runner_module, "datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2026, 4, 8, 9, 0)
+            runner._prompt_urgent_tasks(is_last_time=False)
+
+        updated_tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
+        assert [task["description"] for task in updated_tasks] == ["Task A"]
+
+        procrastinate_entries = json.loads(
+            procrastinate_path.read_text(encoding="utf-8")
+        )
+        assert procrastinate_entries == []
+
+    def test_prompt_urgent_tasks_includes_overdue_low_priority_tasks(
+        self, tmp_path, monkeypatch
+    ):
+        import json
+        from datetime import datetime
+        import threading
+
+        import schedule_management.runner as runner_module
+        import schedule_management.data.loaders as data_loaders
+
+        tasks_path = tmp_path / "tasks.json"
+        procrastinate_path = tmp_path / "procrastinate.json"
+
+        tasks_path.write_text(
+            json.dumps(
+                [
+                    {"description": "Task Low Prio Overdue", "priority": 5},
+                    {"description": "Task Low Prio Normal", "priority": 5},
+                ]
+            ),
+            encoding="utf-8",
+        )
+        procrastinate_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "description": "Task Low Prio Overdue",
+                        "since": "2026-04-05",
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(data_loaders, "TASKS_PATH", str(tasks_path))
+        monkeypatch.setattr(data_loaders, "PROCRASTINATE_PATH", str(procrastinate_path))
+
+        prompted_questions = []
+        monkeypatch.setattr(
+            runner_module,
+            "ask_yes_no",
+            lambda question, title: prompted_questions.append(question) or True,
+        )
+
+        runner = runner_module.ScheduleRunner.__new__(runner_module.ScheduleRunner)
+        runner._urgent_task_prompt_lock = threading.Lock()
+
+        with patch.object(runner_module, "datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2026, 4, 8, 9, 0)
+            runner._prompt_urgent_tasks(is_last_time=True)
+
+        assert len(prompted_questions) == 1
+        assert "Task Low Prio Overdue" in prompted_questions[0]
+        assert "Procrastinated for 3 days" in prompted_questions[0]
 
     def test_prompt_urgent_tasks_stops_on_cancel(self, tmp_path, monkeypatch):
         import json

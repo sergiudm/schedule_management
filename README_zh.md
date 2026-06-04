@@ -77,6 +77,8 @@ rmd add "Biology homework" 9 1
 rmd sync
 ```
 
+如果希望每次成功执行 `rmd add ...` 后都立即显示与 `rmd ls` 相同的任务表，可以在 `[settings]` 下设置 `show_tasks_after_add = true`。
+
 `rmd sync` 会读取 `tasks/tasks.json`，为今天的 pomodoro/potato 生成具体任务分配；如果你拒绝预览，它会带着你的反馈再排一次。
 
 ### 4. 检查结果

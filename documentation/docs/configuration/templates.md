@@ -17,6 +17,7 @@ Perfect for software developers following agile methodologies.
 sound_file = "/System/Library/Sounds/Ping.aiff"
 alarm_interval = 5
 max_alarm_duration = 300
+show_tasks_after_add = false
 
 [time_blocks]
 pomodoro = 25
@@ -97,6 +98,7 @@ Ideal for students managing classes, study sessions, and assignments.
 sound_file = "/System/Library/Sounds/Glass.aiff"
 alarm_interval = 5
 max_alarm_duration = 300
+show_tasks_after_add = false
 
 [time_blocks]
 study_session = 45
