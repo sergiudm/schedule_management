@@ -4,7 +4,7 @@ alarm_interval = 5  # seconds between alarm repeats
 max_alarm_duration = 300  # maximum alarm duration in seconds (5 minutes)
 skip_days = ["sunday"]
 language = "en"
-show_tasks_after_add = false
+show_tasks_after_change = false
 
 [time_blocks]
 # time in minutes

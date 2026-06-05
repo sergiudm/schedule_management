@@ -49,10 +49,10 @@ from schedule_management.data import (
 # =============================================================================
 
 
-def _should_show_tasks_after_add() -> bool:
-    """Return whether the active settings request an `rmd ls` display after add."""
+def _should_show_tasks_after_change() -> bool:
+    """Return whether the active settings request an `rmd ls` display after a change."""
     try:
-        return ScheduleConfig(str(SETTINGS_PATH)).show_tasks_after_add
+        return ScheduleConfig(str(SETTINGS_PATH)).show_tasks_after_change
     except Exception:
         return False
 
@@ -147,7 +147,7 @@ def add_task(args) -> int:
         return 1
 
     print(action_msg)
-    if _should_show_tasks_after_add():
+    if _should_show_tasks_after_change():
         show_tasks(args)
     return 0
 
@@ -278,6 +278,8 @@ def delete_task(args) -> int:
                 )
                 for deletion in successful_deletions:
                     print(f"   - {deletion}")
+            if _should_show_tasks_after_change():
+                show_tasks(args)
             return 0 if not all_errors else 1
         except Exception as e:
             print(_t("❌ Error saving tasks: {e}").format(e=e))

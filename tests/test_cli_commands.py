@@ -1089,7 +1089,7 @@ class TestTaskManagement:
         mock_save_tasks.return_value = None
         settings_path = tmp_path / "settings.toml"
         settings_path.write_text(
-            "[settings]\nshow_tasks_after_add = true\n",
+            "[settings]\nshow_tasks_after_change = true\n",
             encoding="utf-8",
         )
         monkeypatch.setattr(

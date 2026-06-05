@@ -4,7 +4,7 @@ alarm_interval = 5  # seconds between alarm repeats
 max_alarm_duration = 300  # maximum alarm duration in seconds (5 minutes)
 skip_days = ["sunday"]
 language = "en"  # Language: "en" for English, "zh" for Chinese. Default is "en".
-show_tasks_after_add = false  # If true, rmd add prints the rmd ls task table after saving.
+show_tasks_after_change = true  # If true, rmd add/rm prints the rmd ls task table after saving.
 
 [time_blocks]
 # time in minutes
@@ -33,3 +33,7 @@ monthly_review = "1 20:00"
 config_dir = "config"
 
 reports_path = "~/Desktop/reports"
+
+[desktop_widget]
+enabled = true  # If true, shows task list as an Übersicht desktop widget (macOS only).
+refresh_frequency = 30  # Widget refresh interval in seconds.
