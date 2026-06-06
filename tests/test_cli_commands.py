@@ -5,6 +5,7 @@ Tests the update, view, and status commands using the new OOP architecture.
 
 import json
 import sys
+import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 from datetime import datetime, time, date
@@ -2127,3 +2128,245 @@ class TestMainFunctions:
         result = reminder.main()
 
         assert result == 1
+
+
+class TestSettingsCommand:
+    """Test the interactive settings TUI command wiring and data layer."""
+
+    def test_settings_parser_wiring(self):
+        """Test parser routes 'settings' to settings_command."""
+        parser = reminder.create_parser()
+        args = parser.parse_args(["settings"])
+
+        assert args.command == "settings"
+        assert args.func is reminder.settings_command
+
+    def test_settings_model_load_and_save(self, tmp_path):
+        """Test round-trip load → mutate → save → reload."""
+        from schedule_management.commands.settings import SettingsModel
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            '[settings]\nalarm_interval = 5\nlanguage = "en"\n'
+            "\n[time_blocks]\npomodoro = 25\n",
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+
+        assert model.get("settings", "alarm_interval") == 5
+        assert model.get("settings", "language") == "en"
+        assert model.get("time_blocks", "pomodoro") == 25
+        assert model.dirty is False
+
+        # Mutate and save
+        model.set("settings", "alarm_interval", 10)
+        assert model.dirty is True
+
+        model.save()
+        assert model.dirty is False
+
+        # Reload and verify persistence
+        model2 = SettingsModel(settings_file)
+        assert model2.get("settings", "alarm_interval") == 10
+        assert model2.get("settings", "language") == "en"
+
+    def test_settings_model_dirty_tracking(self, tmp_path):
+        """Test dirty flag only flips on actual value changes."""
+        from schedule_management.commands.settings import SettingsModel
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            '[settings]\nalarm_interval = 5\n', encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        assert model.dirty is False
+
+        # Setting same value should not mark dirty
+        model.set("settings", "alarm_interval", 5)
+        assert model.dirty is False
+
+        # Setting different value should mark dirty
+        model.set("settings", "alarm_interval", 10)
+        assert model.dirty is True
+
+    def test_settings_model_delete(self, tmp_path):
+        """Test key deletion and dirty tracking."""
+        from schedule_management.commands.settings import SettingsModel
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            '[settings]\nalarm_interval = 5\nlanguage = "en"\n',
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        assert model.delete("settings", "language") is True
+        assert model.dirty is True
+        assert model.get("settings", "language") is None
+
+        # Delete non-existent key
+        assert model.delete("settings", "nonexistent") is False
+
+    def test_settings_model_add_key(self, tmp_path):
+        """Test adding a new key with default value."""
+        from schedule_management.commands.settings import SettingsModel
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            "[time_blocks]\npomodoro = 25\n", encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        assert model.add_key("time_blocks", "study") is True
+        assert model.dirty is True
+        # time_blocks fallback is NUMBER with min_val=1
+        assert model.get("time_blocks", "study") == 1
+
+        # Adding duplicate returns False
+        assert model.add_key("time_blocks", "study") is False
+
+    def test_settings_model_sections_and_keys(self, tmp_path):
+        """Test section and key listing."""
+        from schedule_management.commands.settings import SettingsModel
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            "[settings]\na = 1\nb = 2\n\n[paths]\nc = 3\n",
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        assert model.sections() == ["settings", "paths"]
+        assert model.keys_in("settings") == ["a", "b"]
+        assert model.keys_in("paths") == ["c"]
+        assert model.keys_in("nonexistent") == []
+
+    def test_toml_writer_round_trip(self, tmp_path):
+        """Test the minimal TOML serializer handles all value types."""
+        from schedule_management.toml_writer import dump_toml, load_toml_raw
+
+        data = {
+            "settings": {
+                "sound": "/path/to/sound.aiff",
+                "interval": 5,
+                "enabled": True,
+                "disabled": False,
+                "days": ["monday", "friday"],
+            },
+            "blocks": {
+                "pomodoro": 25,
+            },
+        }
+        path = tmp_path / "test.toml"
+        dump_toml(data, path)
+
+        loaded = load_toml_raw(path)
+        assert loaded == data
+
+    def test_toml_writer_string_escaping(self, tmp_path):
+        """Test TOML writer escapes special characters in strings."""
+        from schedule_management.toml_writer import dump_toml, load_toml_raw
+
+        data = {"section": {"msg": 'He said "hello" and \\n left'}}
+        path = tmp_path / "escape.toml"
+        dump_toml(data, path)
+
+        loaded = load_toml_raw(path)
+        assert loaded["section"]["msg"] == 'He said "hello" and \\n left'
+
+    def test_settings_meta_coverage(self):
+        """All keys in the template have metadata or a section fallback."""
+        from schedule_management.commands.settings import _get_meta
+        from schedule_management.toml_writer import load_toml_raw
+        from conftest import TEST_CONFIG_DIR
+
+        # Load the test config settings
+        settings_path = TEST_CONFIG_DIR / "user_config_0" / "settings.toml"
+        if not settings_path.exists():
+            return  # skip if test fixture missing
+        data = load_toml_raw(settings_path)
+
+        for section, values in data.items():
+            if not isinstance(values, dict):
+                continue
+            for key in values:
+                meta = _get_meta(section, key)
+                assert meta is not None, (
+                    f"No metadata for ({section!r}, {key!r})"
+                )
+
+    def test_settings_tui_row_building(self, tmp_path):
+        """Test TUI builds correct rows from model data."""
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            "[settings]\na = 1\nb = 2\n\n[paths]\nc = 3\n",
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        tui = SettingsTUI(model)
+
+        # Expect: header, a, b, header, c
+        assert len(tui.rows) == 5
+        assert tui.rows[0].is_header and tui.rows[0].section == "settings"
+        assert tui.rows[1].key == "a"
+        assert tui.rows[2].key == "b"
+        assert tui.rows[3].is_header and tui.rows[3].section == "paths"
+        assert tui.rows[4].key == "c"
+
+        # Cursor should start on first navigable row
+        assert tui.cursor == 1
+
+    @patch("sys.stdin")
+    def test_settings_command_missing_file(self, mock_stdin, tmp_path, monkeypatch, capsys):
+        """Test settings_command returns 1 when settings file is missing."""
+        from schedule_management.commands.settings import settings_command
+
+        mock_stdin.isatty.return_value = True
+
+        # Point to an empty config dir
+        empty_config = tmp_path / "config" / "user_config_0"
+        empty_config.mkdir(parents=True)
+        (tmp_path / "config" / ".active_config").write_text("0\n")
+        monkeypatch.setenv("REMINDER_CONFIG_DIR", str(tmp_path / "config"))
+
+        args = MagicMock()
+        result = settings_command(args)
+        assert result == 1
+
+        captured = capsys.readouterr()
+        assert "not found" in captured.out
+
+    @pytest.mark.parametrize("exit_key", ["q", "e", "x"])
+    @patch("schedule_management.commands.settings.Live")
+    @patch("readchar.readkey")
+    def test_settings_tui_run(self, mock_readkey, mock_live_class, exit_key, tmp_path):
+        """Test the run loop of SettingsTUI updates Live and exits on exit_key."""
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI
+        from unittest.mock import MagicMock
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("[settings]\nlanguage = \"en\"\n", encoding="utf-8")
+
+        model = SettingsModel(settings_file)
+        tui = SettingsTUI(model)
+
+        mock_readkey.return_value = exit_key
+
+        # Mock the Live context manager instance
+        mock_live_instance = MagicMock()
+        mock_live_class.return_value = mock_live_instance
+
+        # Run the TUI
+        result = tui.run()
+
+        assert result == 0
+        mock_live_class.assert_called_once()
+        # Verify the context manager entered
+        mock_live_instance.__enter__.assert_called_once()
+
+

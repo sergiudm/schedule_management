@@ -56,6 +56,7 @@ Commands for generating productivity reports:
 - [`rmd report <type>`](schedule-management.md#report) - Generate weekly or monthly PDF reports
 
 ### System Commands
+- [`rmd settings`](schedule-management.md#settings) - Interactive TUI for editing `settings.toml` with keyboard navigation (arrows to navigate, Enter to edit, Space to toggle, `s` to save, `q` to quit)
 - [`rmd edit <file>`](schedule-management.md#edit) - Open configuration files (`settings`, `odd`, `even`, `deadlines`, `habits`) in your default editor
 - `rmd --help` - Show help information
 

@@ -10,6 +10,7 @@ This package contains all CLI command implementations, organized by domain:
 - sync: LLM-assisted task assignment for today's work blocks
 - service: Service management (update, switch, stop, report)
 - setup: Interactive AI-assisted schedule setup
+- settings: Interactive TUI for editing settings.toml
 """
 
 from schedule_management.commands.tasks import add_task, delete_task, show_tasks
@@ -31,6 +32,7 @@ from schedule_management.commands.service import (
     mode_command,
 )
 from schedule_management.commands.setup import setup_command
+from schedule_management.commands.settings import settings_command
 
 __all__ = [
     # Task commands
@@ -58,4 +60,6 @@ __all__ = [
     "mode_command",
     # Setup command
     "setup_command",
+    # Settings command
+    "settings_command",
 ]

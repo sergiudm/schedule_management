@@ -128,6 +128,7 @@ npm run tauri:build
 | `rmd view` | 生成 PDF 日程可视化 |
 | `rmd switch <id>` | 切换到不同的 `user_config_n` 配置版本并重载服务 |
 | `rmd mode [j\|p]` | 查看或切换当前模式 (j 模式允许所有提醒，p 模式取消具体日程事件提醒) |
+| `rmd settings` | 交互式 TUI 编辑 `settings.toml`（方向键导航、Enter/Space 编辑、`s` 保存、`q` 退出） |
 
 ## 手动配置和文档
 

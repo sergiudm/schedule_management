@@ -1,0 +1,925 @@
+"""
+Settings TUI - Interactive terminal editor for settings.toml.
+
+Provides a keyboard-driven interface for viewing and editing settings.
+Users navigate with arrow keys and modify values through selection
+pickers, multi-select checkboxes, toggles, or inline text input.
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Any
+
+from rich.console import Console, Group
+from rich.live import Live
+from rich.panel import Panel
+from rich.text import Text
+
+from schedule_management.config_layout import resolve_runtime_paths
+from schedule_management.toml_writer import dump_toml, load_toml_raw
+
+
+# =============================================================================
+# CONSTANTS
+# =============================================================================
+
+WEEKDAYS = (
+    "monday", "tuesday", "wednesday", "thursday",
+    "friday", "saturday", "sunday",
+)
+
+SECTION_LABELS: dict[str, str] = {
+    "settings": "⚙️  General Settings",
+    "time_blocks": "⏱️  Time Blocks",
+    "time_points": "🔔  Notifications",
+    "tasks": "📋  Task Scheduling",
+    "paths": "📁  File Paths",
+    "desktop_widget": "🖥️  Desktop Widget",
+}
+
+_TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
+
+
+def _valid_time(value: str) -> bool:
+    m = _TIME_RE.match(value.strip())
+    if not m:
+        return False
+    return 0 <= int(m.group(1)) <= 23 and 0 <= int(m.group(2)) <= 59
+
+
+# =============================================================================
+# EDITOR TYPES & FIELD METADATA
+# =============================================================================
+
+
+class EditorType(Enum):
+    TOGGLE = "toggle"
+    PICKER = "picker"
+    MULTI_SELECT = "multi_select"
+    NUMBER = "number"
+    TEXT = "text"
+    TIME = "time"
+    TIME_LIST = "time_list"
+    WEEKDAY_TIME = "weekday_time"
+    DAY_TIME = "day_time"
+
+
+@dataclass(frozen=True)
+class FieldMeta:
+    editor: EditorType
+    help_text: str = ""
+    choices: tuple[str, ...] = ()
+    min_val: int | None = None
+    max_val: int | None = None
+
+
+# Explicit metadata for known setting keys.
+FIELD_REGISTRY: dict[tuple[str, str], FieldMeta] = {
+    ("settings", "sound_file"): FieldMeta(
+        EditorType.TEXT, "Path to notification sound file"),
+    ("settings", "alarm_interval"): FieldMeta(
+        EditorType.NUMBER, "Seconds between alarm repeats", min_val=1, max_val=120),
+    ("settings", "max_alarm_duration"): FieldMeta(
+        EditorType.NUMBER, "Max alarm duration in seconds", min_val=10, max_val=3600),
+    ("settings", "skip_days"): FieldMeta(
+        EditorType.MULTI_SELECT, "Days to skip all reminders", choices=WEEKDAYS),
+    ("settings", "language"): FieldMeta(
+        EditorType.PICKER, "UI language", choices=("en", "zh")),
+    ("settings", "show_tasks_after_change"): FieldMeta(
+        EditorType.TOGGLE, "Print task list after rmd add/rm"),
+    ("tasks", "daily_urgent"): FieldMeta(
+        EditorType.TIME_LIST, "Times for urgent task reminders (HH:MM)"),
+    ("tasks", "ddl_urgent"): FieldMeta(
+        EditorType.TIME_LIST, "Times for deadline reminders (HH:MM)"),
+    ("tasks", "daily_summary"): FieldMeta(
+        EditorType.TIME, "Time for daily summary (HH:MM)"),
+    ("tasks", "habit_prompt"): FieldMeta(
+        EditorType.TIME, "Time for habit tracking prompt (HH:MM)"),
+    ("tasks", "weekly_review"): FieldMeta(
+        EditorType.WEEKDAY_TIME, "Weekday and time for weekly review"),
+    ("tasks", "monthly_review"): FieldMeta(
+        EditorType.DAY_TIME, "Day-of-month and time for monthly review"),
+    ("desktop_widget", "enabled"): FieldMeta(
+        EditorType.TOGGLE, "Show task list as desktop widget (macOS)"),
+    ("desktop_widget", "refresh_frequency"): FieldMeta(
+        EditorType.NUMBER, "Widget refresh interval in seconds", min_val=5, max_val=3600),
+}
+
+# Fallback metadata for sections with user-defined keys.
+SECTION_FALLBACKS: dict[str, FieldMeta] = {
+    "time_blocks": FieldMeta(EditorType.NUMBER, "Duration in minutes", min_val=1, max_val=480),
+    "time_points": FieldMeta(EditorType.TEXT, "Notification message"),
+    "paths": FieldMeta(EditorType.TEXT, "File or directory path"),
+}
+
+
+def _get_meta(section: str, key: str) -> FieldMeta:
+    meta = FIELD_REGISTRY.get((section, key))
+    if meta is not None:
+        return meta
+    return SECTION_FALLBACKS.get(section, FieldMeta(EditorType.TEXT))
+
+
+# =============================================================================
+# ROW MODEL
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class Row:
+    """A single UI row — either a section header or a key-value entry."""
+    section: str
+    key: str | None = None
+
+    @property
+    def is_header(self) -> bool:
+        return self.key is None
+
+
+# =============================================================================
+# DATA MODEL
+# =============================================================================
+
+
+class SettingsModel:
+    """Loads, mutates, and persists settings.toml data."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.data: dict[str, dict[str, Any]] = {}
+        self.dirty = False
+        self.load()
+
+    def load(self) -> None:
+        self.data = load_toml_raw(self.path)
+        self.dirty = False
+
+    def save(self) -> None:
+        dump_toml(self.data, self.path)
+        self.dirty = False
+
+    def get(self, section: str, key: str) -> Any:
+        return self.data.get(section, {}).get(key)
+
+    def set(self, section: str, key: str, value: Any) -> None:
+        if section not in self.data:
+            self.data[section] = {}
+        if self.data[section].get(key) != value:
+            self.data[section][key] = value
+            self.dirty = True
+
+    def delete(self, section: str, key: str) -> bool:
+        if section in self.data and key in self.data[section]:
+            del self.data[section][key]
+            self.dirty = True
+            return True
+        return False
+
+    def add_key(self, section: str, key: str) -> bool:
+        """Add a key with a sensible default.  Returns False if it exists."""
+        if section in self.data and key in self.data[section]:
+            return False
+        if section not in self.data:
+            self.data[section] = {}
+        meta = _get_meta(section, key)
+        default: Any
+        if meta.editor == EditorType.NUMBER:
+            default = meta.min_val or 0
+        elif meta.editor == EditorType.TOGGLE:
+            default = False
+        elif meta.editor in (EditorType.TIME_LIST, EditorType.MULTI_SELECT):
+            default = []
+        else:
+            default = ""
+        self.data[section][key] = default
+        self.dirty = True
+        return True
+
+    def sections(self) -> list[str]:
+        return list(self.data.keys())
+
+    def keys_in(self, section: str) -> list[str]:
+        return list(self.data.get(section, {}).keys())
+
+
+# =============================================================================
+# TUI STATE
+# =============================================================================
+
+
+class _Mode(Enum):
+    BROWSE = "browse"
+    PICKER = "picker"
+    MULTI_SELECT = "multi_select"
+    INLINE = "inline"
+    TIME_LIST = "time_list"
+    CONFIRM_QUIT = "confirm_quit"
+    ADD_KEY = "add_key"
+
+
+# =============================================================================
+# TUI
+# =============================================================================
+
+
+class SettingsTUI:
+    """Interactive terminal UI for editing settings."""
+
+    def __init__(self, model: SettingsModel) -> None:
+        self.model = model
+        self.console = Console()
+
+        # Navigation
+        self.rows: list[Row] = []
+        self.cursor = 0
+        self.scroll_offset = 0
+        self.mode = _Mode.BROWSE
+        self.message = ""
+
+        # Picker / multi-select state
+        self.picker_choices: list[str] = []
+        self.picker_cursor = 0
+        self.picker_selected: set[int] = set()
+
+        # Inline editor state
+        self.edit_buffer = ""
+
+        # Time-list editor state
+        self.time_list_values: list[str] = []
+        self.time_list_cursor = 0
+        self.time_list_editing = False  # True when editing an item inline
+
+        # Compound editor state (weekday_time / day_time)
+        self.compound_type: str | None = None   # "weekday_time" or "day_time"
+        self.compound_step = 0
+        self.compound_partial = ""
+        self._compound_time_default = "20:00"
+
+        # Row being edited
+        self.editing_row: Row = Row("")
+
+        # Add-key target section
+        self._add_section = ""
+
+        self._build_rows()
+
+    # --------------------------------------------------------------------- #
+    # Row management
+    # --------------------------------------------------------------------- #
+
+    def _build_rows(self) -> None:
+        self.rows = []
+        for section in self.model.sections():
+            self.rows.append(Row(section))
+            for key in self.model.keys_in(section):
+                self.rows.append(Row(section, key))
+        self._clamp_cursor()
+
+    def _nav_indices(self) -> list[int]:
+        return [i for i, r in enumerate(self.rows) if not r.is_header]
+
+    def _clamp_cursor(self) -> None:
+        nav = self._nav_indices()
+        if not nav:
+            self.cursor = 0
+            return
+        if self.cursor in nav:
+            return
+        for idx in nav:
+            if idx >= self.cursor:
+                self.cursor = idx
+                return
+        self.cursor = nav[-1]
+
+    def _move(self, delta: int) -> None:
+        nav = self._nav_indices()
+        if not nav:
+            return
+        try:
+            ci = nav.index(self.cursor)
+        except ValueError:
+            ci = 0
+        ci = max(0, min(len(nav) - 1, ci + delta))
+        self.cursor = nav[ci]
+
+    def _current_row(self) -> Row:
+        if 0 <= self.cursor < len(self.rows):
+            return self.rows[self.cursor]
+        return Row("")
+
+    # --------------------------------------------------------------------- #
+    # Value formatting for display
+    # --------------------------------------------------------------------- #
+
+    @staticmethod
+    def _fmt_val(value: Any) -> str:
+        if isinstance(value, bool):
+            return "✓ yes" if value else "✗ no"
+        if isinstance(value, list):
+            return ", ".join(str(v) for v in value) if value else "(empty)"
+        return str(value)
+
+    # --------------------------------------------------------------------- #
+    # Rendering
+    # --------------------------------------------------------------------- #
+
+    def _render(self) -> Panel:
+        match self.mode:
+            case _Mode.BROWSE:
+                return self._render_browse()
+            case _Mode.PICKER:
+                return self._render_picker()
+            case _Mode.MULTI_SELECT:
+                return self._render_multi_select()
+            case _Mode.INLINE | _Mode.ADD_KEY:
+                return self._render_inline()
+            case _Mode.TIME_LIST:
+                return self._render_time_list()
+            case _Mode.CONFIRM_QUIT:
+                return self._render_confirm_quit()
+        return self._render_browse()  # fallback
+
+    # ---- Browse --------------------------------------------------------- #
+
+    def _render_browse(self) -> Panel:
+        th = self.console.size.height
+        viewport = max(5, th - 10)
+
+        # Scroll to keep cursor visible
+        if self.cursor < self.scroll_offset:
+            self.scroll_offset = self.cursor
+        elif self.cursor >= self.scroll_offset + viewport:
+            self.scroll_offset = self.cursor - viewport + 1
+
+        t = Text()
+        end = min(len(self.rows), self.scroll_offset + viewport)
+        for idx in range(self.scroll_offset, end):
+            row = self.rows[idx]
+            if row.is_header:
+                label = SECTION_LABELS.get(row.section, row.section)
+                t.append(f"\n  {label}\n", style="bold cyan")
+            else:
+                sel = idx == self.cursor
+                prefix = "  ▸ " if sel else "    "
+                val = self.model.get(row.section, row.key)
+                fv = self._fmt_val(val)
+                kstyle = "bold white" if sel else "white"
+                vstyle = "bold yellow" if sel else "dim"
+                assert row.key is not None
+                t.append(prefix, style=kstyle)
+                t.append(f"{row.key:<26s}", style=kstyle)
+                t.append(f"{fv}\n", style=vstyle)
+
+        # Scroll hints
+        if self.scroll_offset > 0:
+            t.append("    ↑ more above\n", style="dim italic")
+        if end < len(self.rows):
+            t.append("    ↓ more below\n", style="dim italic")
+
+        # Help for selected row
+        row = self._current_row()
+        if not row.is_header and row.key:
+            meta = _get_meta(row.section, row.key)
+            if meta.help_text:
+                t.append(f"\n  ℹ  {meta.help_text}", style="dim italic")
+
+        # Key bindings
+        t.append("\n\n  [↑↓] Navigate  [Enter] Edit  [Space] Toggle  ", style="dim")
+        t.append("[a] Add  [d] Delete\n", style="dim")
+        t.append("  [s] Save  [q] Quit  [e/x] Exit", style="dim")
+
+        if self.message:
+            t.append(f"\n\n  {self.message}", style="green")
+
+        title = "⚙  Settings"
+        if self.model.dirty:
+            title += "  •  modified"
+        return Panel(t, title=title, border_style="bright_blue", padding=(0, 1))
+
+    # ---- Picker --------------------------------------------------------- #
+
+    def _render_picker(self) -> Panel:
+        row = self.editing_row
+        t = Text()
+        for i, choice in enumerate(self.picker_choices):
+            sel = i == self.picker_cursor
+            prefix = "  ▸ " if sel else "    "
+            style = "bold yellow" if sel else ""
+            t.append(f"{prefix}{choice}\n", style=style)
+        t.append("\n  [↑↓] Navigate  [Enter] Select  [Esc] Cancel", style="dim")
+
+        label = row.key or ""
+        if self.compound_type == "weekday_time" and self.compound_step == 0:
+            label += " – select weekday"
+        return Panel(t, title=f"  Select: {label}  ", border_style="yellow", padding=(1, 2))
+
+    # ---- Multi-select --------------------------------------------------- #
+
+    def _render_multi_select(self) -> Panel:
+        row = self.editing_row
+        t = Text()
+        for i, choice in enumerate(self.picker_choices):
+            sel = i == self.picker_cursor
+            check = "✓" if i in self.picker_selected else " "
+            prefix = "▸" if sel else " "
+            style = "bold yellow" if sel else ""
+            t.append(f"  {prefix} [{check}] {choice}\n", style=style)
+        t.append("\n  [↑↓] Navigate  [Space] Toggle  [Enter] Done  [Esc] Cancel", style="dim")
+        return Panel(t, title=f"  Select: {row.key}  ", border_style="yellow", padding=(1, 2))
+
+    # ---- Inline editor -------------------------------------------------- #
+
+    def _render_inline(self) -> Panel:
+        row = self.editing_row
+        meta = _get_meta(row.section, row.key or "")
+        t = Text()
+
+        if self.mode == _Mode.ADD_KEY:
+            t.append(f"  Section: [{self._add_section}]\n\n", style="cyan")
+            t.append("  Key name: ", style="white")
+            t.append(f"{self.edit_buffer}█\n", style="bold yellow")
+        else:
+            old = self.model.get(row.section, row.key or "")
+            t.append(f"  Current: {self._fmt_val(old)}\n\n", style="dim")
+
+            label = "New value"
+            if self.compound_type == "weekday_time" and self.compound_step == 1:
+                label = f"Time (for {self.compound_partial})"
+            elif self.compound_type == "day_time" and self.compound_step == 0:
+                label = "Day of month (1-31)"
+            elif self.compound_type == "day_time" and self.compound_step == 1:
+                label = f"Time (for day {self.compound_partial})"
+
+            t.append(f"  {label}: ", style="white")
+            t.append(f"{self.edit_buffer}█\n", style="bold yellow")
+
+            if meta.help_text:
+                hint = meta.help_text
+                if meta.min_val is not None and meta.max_val is not None:
+                    hint += f" ({meta.min_val}–{meta.max_val})"
+                t.append(f"\n  ℹ  {hint}", style="dim italic")
+
+        if self.message:
+            t.append(f"\n  ⚠  {self.message}", style="bold red")
+
+        t.append("\n\n  [Enter] Confirm  [Esc] Cancel", style="dim")
+        title = f"  Edit: {row.key or 'new key'}  " if self.mode != _Mode.ADD_KEY else "  Add Key  "
+        return Panel(t, title=title, border_style="yellow", padding=(1, 2))
+
+    # ---- Time-list editor ----------------------------------------------- #
+
+    def _render_time_list(self) -> Panel:
+        row = self.editing_row
+        t = Text()
+        if not self.time_list_values:
+            t.append("  (no times configured)\n", style="dim")
+        else:
+            for i, v in enumerate(self.time_list_values):
+                sel = i == self.time_list_cursor
+                prefix = "  ▸ " if sel else "    "
+                style = "bold yellow" if sel else ""
+                t.append(f"{prefix}{v}\n", style=style)
+        t.append("\n  [↑↓] Navigate  [Enter] Edit  [a] Add  [d] Delete  [Esc] Done", style="dim")
+        return Panel(t, title=f"  Edit: {row.key}  ", border_style="yellow", padding=(1, 2))
+
+    # ---- Confirm quit --------------------------------------------------- #
+
+    def _render_confirm_quit(self) -> Panel:
+        t = Text()
+        t.append("  You have unsaved changes.\n\n", style="bold white")
+        t.append("  [s] Save and quit\n", style="green")
+        t.append("  [q/e/x] Quit without saving\n", style="red")
+        t.append("  [Esc] Cancel\n", style="dim")
+        return Panel(t, title="  Unsaved Changes  ", border_style="red", padding=(1, 2))
+
+    # --------------------------------------------------------------------- #
+    # Key handling
+    # --------------------------------------------------------------------- #
+
+    def _handle_key(self, key: str) -> str | None:
+        """Dispatch key to the active mode handler.  Return 'quit' to exit."""
+        import readchar as rc
+
+        self.message = ""
+        match self.mode:
+            case _Mode.BROWSE:
+                return self._on_browse(key, rc)
+            case _Mode.PICKER:
+                return self._on_picker(key, rc)
+            case _Mode.MULTI_SELECT:
+                return self._on_multi_select(key, rc)
+            case _Mode.INLINE:
+                return self._on_inline(key, rc)
+            case _Mode.ADD_KEY:
+                return self._on_add_key(key, rc)
+            case _Mode.TIME_LIST:
+                return self._on_time_list(key, rc)
+            case _Mode.CONFIRM_QUIT:
+                return self._on_confirm_quit(key, rc)
+        return None
+
+    # ---- Browse --------------------------------------------------------- #
+
+    def _on_browse(self, key: str, rc: Any) -> str | None:
+        if key == rc.key.UP:
+            self._move(-1)
+        elif key == rc.key.DOWN:
+            self._move(1)
+        elif key in (rc.key.ENTER, "\r", "\n"):
+            self._start_edit()
+        elif key == " ":
+            row = self._current_row()
+            if not row.is_header and row.key:
+                meta = _get_meta(row.section, row.key)
+                if meta.editor == EditorType.TOGGLE:
+                    cur = self.model.get(row.section, row.key)
+                    self.model.set(row.section, row.key, not bool(cur))
+                    self.message = f"Toggled {row.key}"
+                else:
+                    self._start_edit()
+        elif key == "s":
+            try:
+                self.model.save()
+                self.message = "✅ Settings saved"
+            except Exception as exc:
+                self.message = f"❌ Save failed: {exc}"
+        elif key in ("q", "e", "x", "\x1b"):
+            if self.model.dirty:
+                self.mode = _Mode.CONFIRM_QUIT
+            else:
+                return "quit"
+        elif key == "d":
+            row = self._current_row()
+            if not row.is_header and row.key:
+                self.model.delete(row.section, row.key)
+                self._build_rows()
+                self.message = f"Deleted {row.key}"
+        elif key == "a":
+            row = self._current_row()
+            self._add_section = row.section
+            self.edit_buffer = ""
+            self.mode = _Mode.ADD_KEY
+        return None
+
+    # ---- Picker --------------------------------------------------------- #
+
+    def _on_picker(self, key: str, rc: Any) -> str | None:
+        if key == rc.key.UP:
+            self.picker_cursor = max(0, self.picker_cursor - 1)
+        elif key == rc.key.DOWN:
+            self.picker_cursor = min(len(self.picker_choices) - 1, self.picker_cursor + 1)
+        elif key in (rc.key.ENTER, "\r", "\n"):
+            selected = self.picker_choices[self.picker_cursor]
+            if self.compound_type == "weekday_time":
+                # Step 1 done → move to time input
+                self.compound_partial = selected
+                self.compound_step = 1
+                self.mode = _Mode.INLINE
+                self.edit_buffer = self._compound_time_default
+            else:
+                row = self.editing_row
+                self.model.set(row.section, row.key or "", selected)
+                self.mode = _Mode.BROWSE
+                self.message = f"Set {row.key} = {selected}"
+        elif key == "\x1b":
+            self.mode = _Mode.BROWSE
+            self.compound_type = None
+        return None
+
+    # ---- Multi-select --------------------------------------------------- #
+
+    def _on_multi_select(self, key: str, rc: Any) -> str | None:
+        if key == rc.key.UP:
+            self.picker_cursor = max(0, self.picker_cursor - 1)
+        elif key == rc.key.DOWN:
+            self.picker_cursor = min(len(self.picker_choices) - 1, self.picker_cursor + 1)
+        elif key == " ":
+            if self.picker_cursor in self.picker_selected:
+                self.picker_selected.discard(self.picker_cursor)
+            else:
+                self.picker_selected.add(self.picker_cursor)
+        elif key in (rc.key.ENTER, "\r", "\n"):
+            chosen = [self.picker_choices[i] for i in sorted(self.picker_selected)]
+            row = self.editing_row
+            self.model.set(row.section, row.key or "", chosen)
+            self.mode = _Mode.BROWSE
+            self.message = f"Set {row.key} = {chosen}"
+        elif key == "\x1b":
+            self.mode = _Mode.BROWSE
+        return None
+
+    # ---- Inline --------------------------------------------------------- #
+
+    def _on_inline(self, key: str, rc: Any) -> str | None:
+        if key in (rc.key.ENTER, "\r", "\n"):
+            return self._confirm_inline()
+        elif key == "\x1b":
+            if self.time_list_editing:
+                self.mode = _Mode.TIME_LIST
+                self.time_list_editing = False
+            else:
+                self.mode = _Mode.BROWSE
+                self.compound_type = None
+            return None
+        elif key in (rc.key.BACKSPACE, "\x7f", "\x08"):
+            if self.edit_buffer:
+                self.edit_buffer = self.edit_buffer[:-1]
+        elif len(key) == 1 and key.isprintable():
+            self.edit_buffer += key
+        return None
+
+    def _confirm_inline(self) -> str | None:
+        raw = self.edit_buffer.strip()
+        row = self.editing_row
+
+        # Compound: weekday_time step 2
+        if self.compound_type == "weekday_time" and self.compound_step == 1:
+            if not _valid_time(raw):
+                self.message = "Invalid time (use HH:MM)"
+                return None
+            combined = f"{self.compound_partial} {raw}"
+            self.model.set(row.section, row.key or "", combined)
+            self.mode = _Mode.BROWSE
+            self.compound_type = None
+            self.message = f"Set {row.key} = {combined}"
+            return None
+
+        # Compound: day_time step 1 → day number
+        if self.compound_type == "day_time" and self.compound_step == 0:
+            try:
+                day = int(raw)
+                if not 1 <= day <= 31:
+                    raise ValueError
+            except ValueError:
+                self.message = "Day must be between 1 and 31"
+                return None
+            self.compound_partial = str(day)
+            self.compound_step = 1
+            self.edit_buffer = self._compound_time_default
+            return None
+
+        # Compound: day_time step 2 → time
+        if self.compound_type == "day_time" and self.compound_step == 1:
+            if not _valid_time(raw):
+                self.message = "Invalid time (use HH:MM)"
+                return None
+            combined = f"{self.compound_partial} {raw}"
+            self.model.set(row.section, row.key or "", combined)
+            self.mode = _Mode.BROWSE
+            self.compound_type = None
+            self.message = f"Set {row.key} = {combined}"
+            return None
+
+        # Time-list item edit
+        if self.time_list_editing:
+            if not _valid_time(raw):
+                self.message = "Invalid time (use HH:MM)"
+                return None
+            self.time_list_values[self.time_list_cursor] = raw
+            self.mode = _Mode.TIME_LIST
+            self.time_list_editing = False
+            return None
+
+        # Normal field
+        meta = _get_meta(row.section, row.key or "")
+        validated = self._validate(meta, raw)
+        if validated is None:
+            return None
+        self.model.set(row.section, row.key or "", validated)
+        self.mode = _Mode.BROWSE
+        self.message = f"Set {row.key} = {validated}"
+        return None
+
+    def _validate(self, meta: FieldMeta, raw: str) -> Any | None:
+        if meta.editor == EditorType.NUMBER:
+            try:
+                v = int(raw)
+            except ValueError:
+                self.message = "Enter a valid integer"
+                return None
+            if meta.min_val is not None and v < meta.min_val:
+                self.message = f"Minimum is {meta.min_val}"
+                return None
+            if meta.max_val is not None and v > meta.max_val:
+                self.message = f"Maximum is {meta.max_val}"
+                return None
+            return v
+        if meta.editor == EditorType.TIME:
+            if not _valid_time(raw):
+                self.message = "Invalid time (use HH:MM)"
+                return None
+            return raw
+        return raw  # text / path
+
+    # ---- Add key -------------------------------------------------------- #
+
+    def _on_add_key(self, key: str, rc: Any) -> str | None:
+        if key in (rc.key.ENTER, "\r", "\n"):
+            name = self.edit_buffer.strip()
+            if not name:
+                self.message = "Key name cannot be empty"
+                return None
+            if not self.model.add_key(self._add_section, name):
+                self.message = f"Key '{name}' already exists"
+                self.mode = _Mode.BROWSE
+                return None
+            self._build_rows()
+            # Move cursor to the new key
+            for i, r in enumerate(self.rows):
+                if r.section == self._add_section and r.key == name:
+                    self.cursor = i
+                    break
+            self.mode = _Mode.BROWSE
+            self.message = f"Added {name} — press Enter to set its value"
+            return None
+        elif key == "\x1b":
+            self.mode = _Mode.BROWSE
+            return None
+        elif key in (rc.key.BACKSPACE, "\x7f", "\x08"):
+            if self.edit_buffer:
+                self.edit_buffer = self.edit_buffer[:-1]
+        elif len(key) == 1 and key.isprintable():
+            self.edit_buffer += key
+        return None
+
+    # ---- Time-list ------------------------------------------------------ #
+
+    def _on_time_list(self, key: str, rc: Any) -> str | None:
+        if key == rc.key.UP:
+            if self.time_list_values:
+                self.time_list_cursor = max(0, self.time_list_cursor - 1)
+        elif key == rc.key.DOWN:
+            if self.time_list_values:
+                self.time_list_cursor = min(
+                    len(self.time_list_values) - 1, self.time_list_cursor)
+        elif key in (rc.key.ENTER, "\r", "\n"):
+            if self.time_list_values:
+                self.edit_buffer = self.time_list_values[self.time_list_cursor]
+                self.time_list_editing = True
+                self.mode = _Mode.INLINE
+        elif key == "a":
+            self.time_list_values.append("00:00")
+            self.time_list_cursor = len(self.time_list_values) - 1
+            self.edit_buffer = "00:00"
+            self.time_list_editing = True
+            self.mode = _Mode.INLINE
+        elif key == "d":
+            if self.time_list_values:
+                self.time_list_values.pop(self.time_list_cursor)
+                if self.time_list_cursor >= len(self.time_list_values):
+                    self.time_list_cursor = max(0, len(self.time_list_values) - 1)
+        elif key == "\x1b":
+            # Save list back to model
+            row = self.editing_row
+            self.model.set(row.section, row.key or "", list(self.time_list_values))
+            self.mode = _Mode.BROWSE
+            self.message = f"Updated {row.key}"
+        return None
+
+    # ---- Confirm quit --------------------------------------------------- #
+
+    def _on_confirm_quit(self, key: str, rc: Any) -> str | None:
+        if key == "s":
+            try:
+                self.model.save()
+            except Exception as exc:
+                self.message = f"❌ Save failed: {exc}"
+                self.mode = _Mode.BROWSE
+                return None
+            return "quit"
+        elif key in ("q", "e", "x"):
+            return "quit"
+        elif key == "\x1b":
+            self.mode = _Mode.BROWSE
+        return None
+
+    # --------------------------------------------------------------------- #
+    # Start editing the current row
+    # --------------------------------------------------------------------- #
+
+    def _start_edit(self) -> None:
+        row = self._current_row()
+        if row.is_header or not row.key:
+            return
+        meta = _get_meta(row.section, row.key)
+        value = self.model.get(row.section, row.key)
+        self.editing_row = row
+        self.compound_type = None
+
+        match meta.editor:
+            case EditorType.TOGGLE:
+                self.model.set(row.section, row.key, not bool(value))
+                self.message = f"Toggled {row.key}"
+
+            case EditorType.PICKER:
+                self.mode = _Mode.PICKER
+                self.picker_choices = list(meta.choices)
+                try:
+                    self.picker_cursor = self.picker_choices.index(str(value))
+                except ValueError:
+                    self.picker_cursor = 0
+
+            case EditorType.MULTI_SELECT:
+                self.mode = _Mode.MULTI_SELECT
+                self.picker_choices = list(meta.choices)
+                cur = value if isinstance(value, list) else []
+                self.picker_selected = {
+                    i for i, c in enumerate(self.picker_choices) if c in cur
+                }
+                self.picker_cursor = 0
+
+            case EditorType.NUMBER | EditorType.TEXT | EditorType.TIME:
+                self.mode = _Mode.INLINE
+                self.edit_buffer = str(value) if value is not None else ""
+                self.time_list_editing = False
+
+            case EditorType.TIME_LIST:
+                self.mode = _Mode.TIME_LIST
+                self.time_list_values = list(value) if isinstance(value, list) else []
+                self.time_list_cursor = 0
+
+            case EditorType.WEEKDAY_TIME:
+                parts = str(value).split() if value else ["monday", "20:00"]
+                self.mode = _Mode.PICKER
+                self.picker_choices = list(WEEKDAYS)
+                try:
+                    self.picker_cursor = WEEKDAYS.index(parts[0].lower())
+                except (ValueError, IndexError):
+                    self.picker_cursor = 0
+                self.compound_type = "weekday_time"
+                self.compound_step = 0
+                self._compound_time_default = parts[1] if len(parts) > 1 else "20:00"
+
+            case EditorType.DAY_TIME:
+                parts = str(value).split() if value else ["1", "20:00"]
+                self.mode = _Mode.INLINE
+                self.edit_buffer = parts[0] if parts else "1"
+                self.compound_type = "day_time"
+                self.compound_step = 0
+                self._compound_time_default = parts[1] if len(parts) > 1 else "20:00"
+                self.time_list_editing = False
+
+    # --------------------------------------------------------------------- #
+    # Main loop
+    # --------------------------------------------------------------------- #
+
+    def run(self) -> int:
+        import readchar
+
+        try:
+            with Live(
+                self._render(),
+                console=self.console,
+                screen=True,
+                auto_refresh=False,
+            ) as live:
+                while True:
+                    key = readchar.readkey()
+                    result = self._handle_key(key)
+                    if result == "quit":
+                        break
+                    live.update(self._render(), refresh=True)
+        except KeyboardInterrupt:
+            pass
+        return 0
+
+
+# =============================================================================
+# CLI ENTRY POINT
+# =============================================================================
+
+
+def settings_command(args: Any) -> int:
+    """CLI handler for ``rmd settings``."""
+    try:
+        import readchar  # noqa: F401 – verify availability
+    except ImportError:
+        print("❌ The 'readchar' package is required for the settings editor.")
+        print("   Install with: uv pip install readchar")
+        return 1
+
+    if not sys.stdin.isatty():
+        print("❌ Settings editor requires an interactive terminal.")
+        return 1
+
+    paths = resolve_runtime_paths()
+    settings_path = paths.settings_path
+
+    if not settings_path.exists():
+        print(f"❌ Settings file not found: {settings_path}")
+        print("   Run 'rmd setup' to create a configuration first.")
+        return 1
+
+    try:
+        model = SettingsModel(settings_path)
+    except Exception as exc:
+        print(f"❌ Failed to load settings: {exc}")
+        return 1
+
+    tui = SettingsTUI(model)
+    return tui.run()

@@ -47,6 +47,7 @@ from schedule_management.commands import (
     edit_schedule_command,
     mode_command,
     setup_command,
+    settings_command,
 )
 
 # Data loaders
@@ -102,6 +103,7 @@ __all__ = [
     "edit_schedule_command",
     "mode_command",
     "setup_command",
+    "settings_command",
     # Data loaders
     "load_tasks",
     "save_tasks",

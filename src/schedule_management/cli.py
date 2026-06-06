@@ -14,6 +14,7 @@ Architecture:
     ├── commands/status.py    - status, view commands
     ├── commands/sync.py      - sync command
     ├── commands/service.py   - update, switch, stop, report commands
+    ├── commands/settings.py  - settings command (interactive TUI)
     └── commands/setup.py     - setup command
 
 Entry Points:
@@ -72,6 +73,7 @@ from schedule_management.commands.service import (
     mode_command,
 )
 from schedule_management.commands.setup import setup_command
+from schedule_management.commands.settings import settings_command
 
 
 # =============================================================================
@@ -103,6 +105,7 @@ def create_parser() -> argparse.ArgumentParser:
         ├── stop                        - Stop reminder service
         ├── report <type>               - Generate report
         ├── edit <file>                 - Edit config file
+        ├── settings                    - Interactive settings editor
         ├── completion [shell]          - Print shell completion script
         └── setup                       - Interactive schedule setup
     """
@@ -393,6 +396,14 @@ def create_parser() -> argparse.ArgumentParser:
         func=completion_command,
         parser_factory=create_parser,
     )
+
+    # settings - Interactive settings editor
+    settings_parser = subparsers.add_parser(
+        "settings",
+        help="Interactive TUI editor for settings.toml",
+        description="Browse and edit settings.toml interactively with keyboard navigation.",
+    )
+    settings_parser.set_defaults(func=settings_command)
 
     # mode - display or switch the active mode
     mode_parser = subparsers.add_parser(

@@ -16,6 +16,7 @@ dependencies = [
     "anthropic",
     "google-genai>=1.31.0",
     "openai",
+    "readchar>=4.0.0",
 ]
 license = "MIT"
 license-files = ["LICENSE"]

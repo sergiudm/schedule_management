@@ -130,6 +130,7 @@ the macOS bundles under `src-tauri/target/release/bundle/`.
 | `rmd view` | Generate a PDF schedule visualization |
 | `rmd switch <id>` | Activate a different `user_config_n` snapshot and reload the service |
 | `rmd mode [j\|p]` | Switch or display the current mode (j mode allows all reminders, p mode cancels specific event alarms) |
+| `rmd settings` | Interactive TUI for editing `settings.toml` (arrow keys, Enter/Space to edit, `s` to save, `q` to quit) |
 
 ## Manual Setup and Docs
 
