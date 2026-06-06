@@ -134,9 +134,101 @@ def _escape_applescript_string(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
 
 
+def _show_tk_dialog(
+    message: str,
+    buttons: list[str],
+    default_button: str,
+    title: str = "Reminder",
+    timeout: int | None = None,
+) -> str | None:
+    """
+    Show a modal dialog using tkinter with a readable font size.
+
+    Falls back to AppleScript ``display dialog`` when tkinter is unavailable.
+
+    Args:
+        message: The message to display (may contain newlines).
+        buttons: Button labels in display order.
+        default_button: Label of the button highlighted as the default action.
+        title: Window title.
+        timeout: Auto-close after this many seconds (``None`` to disable).
+
+    Returns:
+        The label of the button that was clicked, or ``None`` if the window
+        was closed without a selection.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import font as tkfont
+    except ImportError:
+        return None
+
+    result: dict[str, str | None] = {"clicked": None}
+
+    root = tk.Tk()
+    root.withdraw()
+
+    dialog = tk.Toplevel(root)
+    dialog.title(title)
+    dialog.resizable(False, False)
+    dialog.attributes("-topmost", True)
+    dialog.protocol("WM_DELETE_WINDOW", lambda: _click(None))
+
+    def _click(label: str | None) -> None:
+        result["clicked"] = label
+        dialog.destroy()
+        root.quit()
+
+    message_font = tkfont.Font(family="Helvetica", size=16)
+    button_font = tkfont.Font(family="Helvetica", size=13)
+
+    msg_label = tk.Label(
+        dialog, text=message, font=message_font, justify="left", padx=24, pady=20
+    )
+    msg_label.pack(fill="both", expand=True)
+
+    btn_frame = tk.Frame(dialog)
+    btn_frame.pack(fill="x", padx=24, pady=(0, 16))
+
+    for label in buttons:
+        btn = tk.Button(
+            btn_frame,
+            text=label,
+            font=button_font,
+            width=14,
+            command=lambda l=label: _click(l),
+        )
+        btn.pack(side="right", padx=4)
+        if label == default_button:
+            dialog.bind("<Return>", lambda _e, l=label: _click(l))
+            btn.focus_set()
+
+    dialog.bind("<Escape>", lambda _e: _click(None))
+
+    dialog.update_idletasks()
+    dialog.transient()
+    dialog.grab_set()
+
+    dialog.update_idletasks()
+    sw = dialog.winfo_screenwidth()
+    sh = dialog.winfo_screenheight()
+    x = (sw - dialog.winfo_width()) // 2
+    y = (sh - dialog.winfo_height()) // 2
+    dialog.geometry(f"+{x}+{y}")
+
+    if timeout is not None:
+        dialog.after(timeout * 1000, lambda: _click(default_button))
+
+    root.mainloop()
+    return result["clicked"]
+
+
 def show_dialog_macos(message: str) -> str:
     """
-    Show an AppleScript dialog with a dismiss button on macOS.
+    Show a modal dialog with a dismiss button on macOS.
+
+    Uses a tkinter dialog with a large font so the message is easy to read.
+    Falls back to AppleScript when tkinter is unavailable.
 
     Args:
         message: The message to display in the dialog
@@ -144,16 +236,25 @@ def show_dialog_macos(message: str) -> str:
     Returns:
         The button clicked ('停止闹铃' typically)
     """
+    button_label = "停止闹铃"
+    clicked = _show_tk_dialog(
+        message,
+        buttons=[button_label],
+        default_button=button_label,
+    )
+    if clicked is not None:
+        return clicked
+    escaped = _escape_applescript_string(message)
     result = subprocess.run(
         [
             "osascript",
             "-e",
-            f'display dialog "{message}" buttons {{"停止闹铃"}} default button "停止闹铃"',
+            f'display dialog "{escaped}" buttons {{"{button_label}"}} default button "{button_label}"',
         ],
         capture_output=True,
         text=True,
     )
-    return result.stdout.strip()
+    return result.stdout.strip() or button_label
 
 
 def show_dialog_linux(message: str) -> str:
@@ -321,7 +422,7 @@ return choice as text
 
 def ask_yes_no_macos(question: str, title: str) -> bool | None:
     """
-    Show a Yes/No dialog on macOS using AppleScript.
+    Show a Yes/No dialog on macOS using a tkinter dialog.
 
     Args:
         question: The question to ask the user
@@ -332,31 +433,16 @@ def ask_yes_no_macos(question: str, title: str) -> bool | None:
         - False: User clicked 'No'
         - None: User clicked 'Stop' or cancelled
     """
-    script = f"""
-set questionText to "{_escape_applescript_string(question)}"
-set titleText to "{_escape_applescript_string(title)}"
-display dialog questionText with title titleText buttons {{"Stop", "No", "Yes"}} default button "Yes" cancel button "Stop" with icon note
-"""
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", script],
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return None
-
-    # 'Stop' (cancel button) causes non-zero exit code in osascript
-    if result.returncode != 0:
-        return None
-
-    stdout = result.stdout.strip()
-    if "button returned:Yes" in stdout:
+    clicked = _show_tk_dialog(
+        question,
+        buttons=["Stop", "No", "Yes"],
+        default_button="Yes",
+        title=title,
+    )
+    if clicked == "Yes":
         return True
-    elif "button returned:No" in stdout:
+    if clicked == "No":
         return False
-
     return None
 
 

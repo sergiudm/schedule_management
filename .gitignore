@@ -29,3 +29,5 @@ config/habits.toml
 # pnpm (since the project officially uses npm/package-lock.json)
 pnpm-lock.yaml
 pnpm-workspace.yaml
+
+.qoder
