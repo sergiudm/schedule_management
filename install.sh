@@ -637,6 +637,47 @@ install_desktop_widget() {
     fi
 }
 
+# Setup shell autocompletion
+setup_autocompletion() {
+    log_info "Setting up shell autocompletion..."
+    
+    local rmd_cmd="$INSTALL_DIR/rmd"
+
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        # zsh is default on macOS
+        if [[ -f "$HOME/.zshrc" ]]; then
+            if ! grep -q "rmd completion zsh" "$HOME/.zshrc"; then
+                echo "eval \"\$(\"$rmd_cmd\" completion zsh)\"" >> "$HOME/.zshrc"
+                log_success "Added zsh autocompletion to ~/.zshrc"
+            else
+                log_info "zsh autocompletion already configured in ~/.zshrc"
+            fi
+        fi
+        # fallback to bash
+        if [[ -f "$HOME/.bash_profile" ]]; then
+            if ! grep -q "rmd completion bash" "$HOME/.bash_profile"; then
+                echo "eval \"\$(\"$rmd_cmd\" completion bash)\"" >> "$HOME/.bash_profile"
+                log_success "Added bash autocompletion to ~/.bash_profile"
+            fi
+        fi
+    elif [[ "$OS_TYPE" == "linux" ]]; then
+        if [[ -f "$HOME/.bashrc" ]]; then
+            if ! grep -q "rmd completion bash" "$HOME/.bashrc"; then
+                echo "eval \"\$(\"$rmd_cmd\" completion bash)\"" >> "$HOME/.bashrc"
+                log_success "Added bash autocompletion to ~/.bashrc"
+            else
+                log_info "bash autocompletion already configured in ~/.bashrc"
+            fi
+        fi
+        if [[ -f "$HOME/.zshrc" ]]; then
+            if ! grep -q "rmd completion zsh" "$HOME/.zshrc"; then
+                echo "eval \"\$(\"$rmd_cmd\" completion zsh)\"" >> "$HOME/.zshrc"
+                log_success "Added zsh autocompletion to ~/.zshrc"
+            fi
+        fi
+    fi
+}
+
 # Display usage (platform-specific)
 display_usage() {
     log_info "Installation completed successfully!"
@@ -711,6 +752,7 @@ main() {
     create_scripts
     test_installation
     install_desktop_widget
+    setup_autocompletion
     display_usage
 
     log_success "Installation complete! 🎉"
