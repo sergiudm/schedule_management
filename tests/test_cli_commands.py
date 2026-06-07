@@ -2370,3 +2370,224 @@ class TestSettingsCommand:
         mock_live_instance.__enter__.assert_called_once()
 
 
+class TestHistoryCommand:
+    """Test the history command functionality."""
+
+    def test_history_parser_wiring(self):
+        """Test parser routes 'history' to history_command with default count."""
+        parser = reminder.create_parser()
+        args = parser.parse_args(["history"])
+
+        assert args.command == "history"
+        assert args.count == 5
+        assert args.func is reminder.history_command
+
+    def test_history_parser_custom_count(self):
+        """Test parser accepts a custom count for history."""
+        parser = reminder.create_parser()
+        args = parser.parse_args(["history", "10"])
+
+        assert args.command == "history"
+        assert args.count == 10
+
+    @patch("schedule_management.commands.history.load_task_log")
+    @patch("schedule_management.commands.history.Console")
+    def test_history_empty_log(self, mock_console_class, mock_load_task_log):
+        """Test history command with an empty task log."""
+        mock_load_task_log.return_value = []
+        mock_console = MagicMock()
+        mock_console_class.return_value = mock_console
+
+        args = MagicMock(count=5)
+        result = reminder.history_command(args)
+
+        assert result == 0
+        mock_console.print.assert_called()
+
+    @patch("schedule_management.commands.history.load_task_log")
+    @patch("schedule_management.commands.history.Console")
+    def test_history_no_completed_activities(
+        self, mock_console_class, mock_load_task_log
+    ):
+        """Test history command when log has entries but no paired activities."""
+        mock_load_task_log.return_value = [
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "action": "added",
+                "task": {"description": "Pending task", "priority": 5},
+            }
+        ]
+        mock_console = MagicMock()
+        mock_console_class.return_value = mock_console
+
+        args = MagicMock(count=5)
+        result = reminder.history_command(args)
+
+        assert result == 0
+
+    @patch("schedule_management.commands.history.load_task_log")
+    @patch("schedule_management.commands.history.Console")
+    def test_history_shows_completed_activities(
+        self, mock_console_class, mock_load_task_log
+    ):
+        """Test history command displays paired activities correctly."""
+        mock_load_task_log.return_value = [
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "action": "added",
+                "task": {"description": "Study math", "priority": 8},
+            },
+            {
+                "timestamp": "2026-06-01T10:30:00",
+                "action": "deleted",
+                "task": {"description": "Study math", "priority": 8},
+            },
+            {
+                "timestamp": "2026-06-02T14:00:00",
+                "action": "added",
+                "task": {"description": "Write report", "priority": 6},
+            },
+            {
+                "timestamp": "2026-06-02T15:00:00",
+                "action": "deleted",
+                "task": {"description": "Write report", "priority": 6},
+            },
+        ]
+        mock_console = MagicMock()
+        mock_console_class.return_value = mock_console
+
+        args = MagicMock(count=5)
+        result = reminder.history_command(args)
+
+        assert result == 0
+        assert mock_console.print.called
+
+    @patch("schedule_management.commands.history.load_task_log")
+    @patch("schedule_management.commands.history.Console")
+    def test_history_respects_count_limit(
+        self, mock_console_class, mock_load_task_log
+    ):
+        """Test history command limits output to the requested count."""
+        entries = []
+        for i in range(10):
+            entries.append({
+                "timestamp": f"2026-06-01T{9 + i:02d}:00:00",
+                "action": "added",
+                "task": {"description": f"Task {i}", "priority": 5},
+            })
+            entries.append({
+                "timestamp": f"2026-06-01T{9 + i:02d}:30:00",
+                "action": "deleted",
+                "task": {"description": f"Task {i}", "priority": 5},
+            })
+        mock_load_task_log.return_value = entries
+
+        mock_console = MagicMock()
+        mock_console_class.return_value = mock_console
+
+        args = MagicMock(count=3)
+        result = reminder.history_command(args)
+
+        assert result == 0
+
+    def test_pair_task_activities(self):
+        """Test the activity pairing logic directly."""
+        from schedule_management.commands.history import _pair_task_activities
+
+        entries = [
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "action": "added",
+                "task": {"description": "Task A", "priority": 8},
+            },
+            {
+                "timestamp": "2026-06-01T10:00:00",
+                "action": "deleted",
+                "task": {"description": "Task A", "priority": 8},
+            },
+            {
+                "timestamp": "2026-06-01T11:00:00",
+                "action": "added",
+                "task": {"description": "Task B", "priority": 3},
+            },
+        ]
+
+        activities = _pair_task_activities(entries)
+
+        assert len(activities) == 1
+        assert activities[0]["description"] == "Task A"
+        assert activities[0]["priority"] == 8
+        assert activities[0]["started_at"].hour == 9
+        assert activities[0]["ended_at"].hour == 10
+
+    def test_pair_task_activities_skips_unpaired(self):
+        """Test that tasks with only 'added' and no 'deleted' are skipped."""
+        from schedule_management.commands.history import _pair_task_activities
+
+        entries = [
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "action": "added",
+                "task": {"description": "Orphan task", "priority": 5},
+            },
+            {
+                "timestamp": "2026-06-01T10:00:00",
+                "action": "updated",
+                "task": {"description": "Orphan task", "priority": 6},
+            },
+        ]
+
+        activities = _pair_task_activities(entries)
+        assert len(activities) == 0
+
+    def test_pair_task_activities_handles_re_added(self):
+        """Test that re-added tasks are paired independently."""
+        from schedule_management.commands.history import _pair_task_activities
+
+        entries = [
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "action": "added",
+                "task": {"description": "Recycled task", "priority": 7},
+            },
+            {
+                "timestamp": "2026-06-01T10:00:00",
+                "action": "deleted",
+                "task": {"description": "Recycled task", "priority": 7},
+            },
+            {
+                "timestamp": "2026-06-02T09:00:00",
+                "action": "added",
+                "task": {"description": "Recycled task", "priority": 9},
+            },
+            {
+                "timestamp": "2026-06-02T11:00:00",
+                "action": "deleted",
+                "task": {"description": "Recycled task", "priority": 9},
+            },
+        ]
+
+        activities = _pair_task_activities(entries)
+
+        assert len(activities) == 2
+        assert activities[0]["priority"] == 7
+        assert activities[1]["priority"] == 9
+
+    def test_format_duration(self):
+        """Test duration formatting helper."""
+        from schedule_management.commands.history import _format_duration
+
+        assert _format_duration(
+            datetime(2026, 6, 1, 9, 0), datetime(2026, 6, 1, 9, 30)
+        ) == "30m"
+        assert _format_duration(
+            datetime(2026, 6, 1, 9, 0), datetime(2026, 6, 1, 11, 15)
+        ) == "2h 15m"
+        assert _format_duration(
+            datetime(2026, 6, 1, 9, 0), datetime(2026, 6, 3, 9, 0)
+        ) == "2d"
+        assert _format_duration(
+            datetime(2026, 6, 1, 9, 0), datetime(2026, 6, 1, 9, 0)
+        ) == "< 1 min"
+
+

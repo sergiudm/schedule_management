@@ -125,6 +125,7 @@ the macOS bundles under `src-tauri/target/release/bundle/`.
 | `rmd sync` | Assign today's pomodoro/potato blocks to tasks with preview + approval |
 | `rmd status [-v]` | Show what is happening now and today's schedule, including synced titles |
 | `rmd add/ls/rm` | Manage the task list that feeds the sync flow |
+| `rmd history [n]` | Show recent completed task activities (default: 5) |
 | `rmd track` | Record habits |
 | `rmd ddl` | Manage deadlines; entries two or more days overdue are auto-pruned |
 | `rmd view` | Generate a PDF schedule visualization |

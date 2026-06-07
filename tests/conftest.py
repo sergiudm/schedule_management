@@ -55,6 +55,7 @@ def configure_test_environment(monkeypatch, tmp_path):
     import schedule_management.reminder_macos as reminder_macos_module
     import schedule_management.data.loaders as data_loaders
     import schedule_management.commands.tasks as tasks_commands
+    import schedule_management.commands.history as history_commands
     import schedule_management.commands.deadlines as deadlines_commands
     import schedule_management.commands.service as service_commands
     import schedule_management.commands.status as status_commands
@@ -67,6 +68,7 @@ def configure_test_environment(monkeypatch, tmp_path):
     _apply_test_paths(reminder_macos_module, task_log_path=isolated_task_log_path)
     _apply_test_paths(data_loaders, task_log_path=isolated_task_log_path)
     _apply_test_paths(tasks_commands, task_log_path=isolated_task_log_path)
+    _apply_test_paths(history_commands, task_log_path=isolated_task_log_path)
     _apply_test_paths(deadlines_commands, task_log_path=isolated_task_log_path)
     _apply_test_paths(service_commands, task_log_path=isolated_task_log_path)
     _apply_test_paths(status_commands, task_log_path=isolated_task_log_path)

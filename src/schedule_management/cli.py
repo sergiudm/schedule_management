@@ -8,6 +8,7 @@ delegates to the various command modules.
 Architecture:
     cli.py (this file)
     ├── commands/tasks.py     - add, rm, ls commands
+    ├── commands/history.py   - history command
     ├── commands/deadlines.py - ddl add, rm, show commands
     ├── commands/habits.py    - track command
     ├── commands/completion.py - shell completion script generation
@@ -52,6 +53,7 @@ from schedule_management.config_layout import (
 
 # Import command handlers from organized modules
 from schedule_management.commands.tasks import add_task, delete_task, show_tasks
+from schedule_management.commands.history import history_command
 from schedule_management.commands.deadlines import (
     add_deadline,
     delete_deadline,
@@ -93,6 +95,7 @@ def create_parser() -> argparse.ArgumentParser:
         ├── add <task> <priority>       - Add new task
         ├── rm <tasks...>               - Remove tasks
         ├── ls                          - List tasks
+        ├── history [n]                 - Show recent activities
         ├── ddl                         - Deadline management
         │   ├── add <event> <date>      - Add deadline
         │   └── rm <events...>          - Remove deadlines
@@ -189,6 +192,21 @@ def create_parser() -> argparse.ArgumentParser:
         description="Display your task list sorted by priority.",
     )
     show_parser.set_defaults(func=show_tasks)
+
+    # history - Show recent completed activities
+    history_parser = subparsers.add_parser(
+        "history",
+        help="Show recent completed task activities",
+        description="Display the most recent completed tasks with lifecycle details.",
+    )
+    history_parser.add_argument(
+        "count",
+        type=int,
+        nargs="?",
+        default=5,
+        help="Number of recent activities to show (default: 5)",
+    )
+    history_parser.set_defaults(func=history_command)
 
     # -------------------------------------------------------------------------
     # Deadline Management Commands

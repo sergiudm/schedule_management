@@ -125,6 +125,34 @@ In later urgent-task popups, the reminder also shows how many days the task has 
 
 When a procrastinated task is complete (`rmd rm`), it is automatically removed from `tasks/procrastinate.json`.
 
+## history
+
+Display recent completed task activities, grouped by calendar day with visual separators.
+
+Each activity shows the task description, its priority level, when it was started (added), when it ended (completed/deleted), and the total duration.
+
+### Syntax
+```bash
+rmd history [COUNT]
+```
+
+### Parameters
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `COUNT` | integer (optional) | Number of recent activities to show (default: 5) |
+
+### Examples
+```bash
+# Show the 5 most recent completed activities
+rmd history
+
+# Show the 10 most recent completed activities
+rmd history 10
+
+# Show the 3 most recent completed activities
+rmd history 3
+```
+
 ---
 
 # Habit Management Commands

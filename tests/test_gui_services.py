@@ -8,8 +8,11 @@ import pytest
 from conftest import TEST_CONFIG_DIR
 
 
-def test_status_snapshot_returns_daily_panels():
+def test_status_snapshot_returns_daily_panels(monkeypatch):
+    from schedule_management.config import ScheduleConfig
     from schedule_management.gui.services import status_snapshot
+
+    monkeypatch.setattr(ScheduleConfig, "should_skip_today", lambda self: False)
 
     snapshot = status_snapshot({})
 

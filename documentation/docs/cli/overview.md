@@ -40,6 +40,7 @@ Commands for managing your task list:
 - [`rmd add`](task-management.md#add) - Add or update tasks
 - [`rmd rm`](task-management.md#remove) - Remove tasks
 - [`rmd ls`](task-management.md#list) - List all tasks
+- [`rmd history`](task-management.md#history) - Show recent completed task activities
 
 ### Deadline Management
 Commands for managing event deadlines:

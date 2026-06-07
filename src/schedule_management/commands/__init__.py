@@ -14,6 +14,7 @@ This package contains all CLI command implementations, organized by domain:
 """
 
 from schedule_management.commands.tasks import add_task, delete_task, show_tasks
+from schedule_management.commands.history import history_command
 from schedule_management.commands.deadlines import (
     add_deadline,
     delete_deadline,
@@ -39,6 +40,8 @@ __all__ = [
     "add_task",
     "delete_task",
     "show_tasks",
+    # History command
+    "history_command",
     # Deadline commands
     "add_deadline",
     "delete_deadline",
