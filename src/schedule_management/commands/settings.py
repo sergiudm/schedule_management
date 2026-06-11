@@ -689,7 +689,7 @@ class SettingsTUI:
                 self.model.set(row.section, row.key or "", selected)
                 self.mode = _Mode.BROWSE
                 self.message = f"Set {row.key} = {selected}"
-        elif key == "\x1b":
+        elif key in ("\x1b", rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
             self.mode = _Mode.BROWSE
             self.compound_type = None
         return None
@@ -712,7 +712,7 @@ class SettingsTUI:
             self.model.set(row.section, row.key or "", chosen)
             self.mode = _Mode.BROWSE
             self.message = f"Set {row.key} = {chosen}"
-        elif key == "\x1b":
+        elif key in ("\x1b", rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
             self.mode = _Mode.BROWSE
         return None
 
@@ -859,7 +859,8 @@ class SettingsTUI:
         elif key == rc.key.DOWN:
             if self.time_list_values:
                 self.time_list_cursor = min(
-                    len(self.time_list_values) - 1, self.time_list_cursor)
+                    len(self.time_list_values) - 1, self.time_list_cursor + 1
+                )
         elif key in (rc.key.ENTER, "\r", "\n"):
             if self.time_list_values:
                 self.edit_buffer = self.time_list_values[self.time_list_cursor]
@@ -876,7 +877,7 @@ class SettingsTUI:
                 self.time_list_values.pop(self.time_list_cursor)
                 if self.time_list_cursor >= len(self.time_list_values):
                     self.time_list_cursor = max(0, len(self.time_list_values) - 1)
-        elif key == "\x1b":
+        elif key in ("\x1b", rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
             # Save list back to model
             row = self.editing_row
             self.model.set(row.section, row.key or "", list(self.time_list_values))

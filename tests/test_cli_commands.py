@@ -2537,6 +2537,50 @@ class TestSettingsCommand:
         # Verify the context manager entered
         mock_live_instance.__enter__.assert_called_once()
 
+    def test_settings_tui_time_list_navigation(self, tmp_path):
+        """Test that UP/DOWN/back keys work correctly in the TIME_LIST editor mode."""
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI, _Mode, Row
+        import readchar
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text("[tasks]\ndaily_urgent = [\"10:00\", \"20:00\"]\n", encoding="utf-8")
+
+        model = SettingsModel(settings_file)
+        tui = SettingsTUI(model)
+
+        # Set up TUI to edit "daily_urgent" in TIME_LIST mode
+        tui.editing_row = Row("tasks", "daily_urgent")
+        tui.mode = _Mode.TIME_LIST
+        tui.time_list_values = ["10:00", "20:00"]
+        tui.time_list_cursor = 0
+
+        # Press DOWN key
+        tui._handle_key(readchar.key.DOWN)
+        assert tui.time_list_cursor == 1
+
+        # Press DOWN key again (should clamp at index 1)
+        tui._handle_key(readchar.key.DOWN)
+        assert tui.time_list_cursor == 1
+
+        # Press UP key
+        tui._handle_key(readchar.key.UP)
+        assert tui.time_list_cursor == 0
+
+        # Press UP key again (should clamp at index 0)
+        tui._handle_key(readchar.key.UP)
+        assert tui.time_list_cursor == 0
+
+        # Press LEFT key (back key)
+        tui._handle_key(readchar.key.LEFT)
+        assert tui.mode == _Mode.BROWSE
+        assert model.get("tasks", "daily_urgent") == ["10:00", "20:00"]
+
+        # Test back keys in PICKER mode
+        tui.mode = _Mode.PICKER
+        tui._handle_key(readchar.key.BACKSPACE)
+        assert tui.mode == _Mode.BROWSE
+
+
 
 class TestHistoryCommand:
     """Test the history command functionality."""

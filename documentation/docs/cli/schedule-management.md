@@ -167,6 +167,24 @@ rmd edit odd
 rmd edit deadlines
 ```
 
+## settings
+
+Open the interactive settings TUI editor to customize your configuration parameters with keyboard navigation.
+
+### Syntax
+```bash
+rmd settings
+```
+
+### What it does
+- Launches a keyboard-driven TUI screen inside the terminal.
+- Allows navigating sections and configuration keys using arrow keys (`Up` / `Down` or `Left` / `Right`).
+- Allows editing numeric or text values inline, toggling boolean values with `Space`, and picking choices/days from lists.
+- Supports adding new custom keys under configurable sections.
+- Allows exiting a sub-editor/picker and going back to the parent section using `Esc`, `Left`, or `Backspace`.
+- Prompts for confirmation when trying to exit with unsaved changes.
+- Persists changes back to your active `settings.toml` configuration on save (`s`).
+
 ## stop
 
 Stop the reminder-runner background service.
