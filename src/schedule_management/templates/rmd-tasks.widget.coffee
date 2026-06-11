@@ -110,10 +110,10 @@ render: (output) ->
   html = '<div class="header">📋 Tasks</div>'
 
   for task in tasks
-    typeMatch = task.desc.match(/\u200b(\d+)/)
+    typeMatch = task.desc.match(/\u2060(\d+)/)
     typeId = if typeMatch then typeMatch[1] else 'default'
     prioClass = "type-#{typeId}"
-    cleanDesc = task.desc.replace(/\u200b\d+/, '')
+    cleanDesc = task.desc.replace(/\u2060\d+/, '')
 
     descClass = 'task-desc'
     if cleanDesc.indexOf('⏳') >= 0

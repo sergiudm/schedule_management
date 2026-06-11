@@ -2063,7 +2063,7 @@ class TestTaskManagement:
         ]
         assert len(procrastinated_cells) == 1
         # Strip zero-width type tag suffix for comparison
-        clean_plain = procrastinated_cells[0].plain.split("\u200b")[0]
+        clean_plain = procrastinated_cells[0].plain.split("\u2060")[0]
         assert clean_plain == "⏳ Delayed task (3 days overdue)"
         assert procrastinated_cells[0].style == "bold red"
 
@@ -2113,8 +2113,8 @@ class TestTaskManagement:
         ]
         assert len(postponed_cells) == 2
         # Highest priority first
-        clean_plain_0 = postponed_cells[0].plain.split("\u200b")[0]
-        clean_plain_1 = postponed_cells[1].plain.split("\u200b")[0]
+        clean_plain_0 = postponed_cells[0].plain.split("\u2060")[0]
+        clean_plain_1 = postponed_cells[1].plain.split("\u2060")[0]
         assert clean_plain_0 == "💤 Task tomorrow (coming tomorrow)"
         assert postponed_cells[0].style == "italic dim"
         assert clean_plain_1 == "💤 Task in 2 days (coming in 2 days)"
@@ -2170,7 +2170,7 @@ class TestTaskManagement:
 
         # Extract the description strings that were added as rows and strip type tags
         added_rows = [
-            call.args[2].plain.split("\u200b")[0]
+            call.args[2].plain.split("\u2060")[0]
             for call in mock_table.add_row.call_args_list
             if len(call.args) >= 3
         ]

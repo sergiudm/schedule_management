@@ -528,8 +528,8 @@ def show_tasks(args) -> int:
         expand=True,
     )
 
-    table.add_column(_t("ID"), justify="right", style="dim", width=4)
-    table.add_column(_t("Priority"), justify="left")
+    table.add_column(_t("ID"), justify="right", style="dim", width=4, no_wrap=True)
+    table.add_column(_t("Priority"), justify="left", no_wrap=True)
     table.add_column(_t("Description"), justify="left")
 
     for i, task in enumerate(sorted_tasks, 1):
@@ -561,7 +561,7 @@ def show_tasks(args) -> int:
         prio_visual = f"[{color}]{filled}[dim]{empty}[/dim] ({priority})[/{color}]"
         if is_postponed_future:
             description_text = Text(
-                f"💤 {description}{postpone_suffix}\u200b{task_type_id}",
+                f"💤 {description}{postpone_suffix}\u2060{task_type_id}",
                 style="italic dim",
             )
         elif description in procrastinate_list:
@@ -572,11 +572,11 @@ def show_tasks(args) -> int:
             # Make overdue tasks (1 or more days overdue) very striking
             is_overdue = age_days is not None and age_days >= 1
             description_text = Text(
-                f"⏳ {description}{_format_procrastination_suffix(age_days)}\u200b{task_type_id}",
+                f"⏳ {description}{_format_procrastination_suffix(age_days)}\u2060{task_type_id}",
                 style="bold red" if is_overdue else "italic dim",
             )
         else:
-            description_text = Text(f"{description}\u200b{task_type_id}")
+            description_text = Text(f"{description}\u2060{task_type_id}")
 
         table.add_row(str(i), prio_visual, description_text)
 

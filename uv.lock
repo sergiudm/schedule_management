@@ -1054,7 +1054,7 @@ wheels = [
 
 [[package]]
 name = "schedule-management"
-version = "0.9.0"
+version = "0.9.6"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
