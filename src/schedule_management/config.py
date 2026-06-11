@@ -95,6 +95,7 @@ class ScheduleConfig:
         self.time_points = config.get("time_points", {})
         self.tasks = config.get("tasks", {})
         self.paths = config.get("paths", {})
+        self.task_types = config.get("task_types", {})
 
     # =========================================================================
     # SOUND & ALARM SETTINGS

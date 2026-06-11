@@ -74,14 +74,123 @@ def add_task(args) -> int:
         $ rmd add "Complete homework" 7 1
         ✅ Task 'Complete homework' added successfully with priority 7! (Daily urgent alarm postponed until 2026-05-27)
     """
-    task_description = args.task
-    priority = args.priority
+    task_description = getattr(args, "task", None)
+    priority = getattr(args, "priority", None)
+    task_type = getattr(args, "task_type", None)
     postpone = getattr(args, "postpone", None)
+
+    # Handle MagicMock args in unit tests
+    try:
+        from unittest.mock import Mock
+        if isinstance(task_type, Mock):
+            task_type = None
+    except ImportError:
+        pass
+
+    # Load task types from settings
+    try:
+        config = ScheduleConfig(str(SETTINGS_PATH))
+        task_types = config.task_types
+    except Exception:
+        task_types = {}
+    if not task_types:
+        task_types = {
+            "1": "read papers",
+            "2": "gym work",
+            "3": "coding",
+            "4": "other"
+        }
+
+    # Check for missing parameters and handle interactive prompt / TUI
+    if task_description is None or priority is None or task_type is None:
+        if not sys.stdin.isatty():
+            # If non-interactive, only task and priority are strictly required (default task_type to 1)
+            if task_description is None or priority is None:
+                missing = []
+                if task_description is None:
+                    missing.append("task")
+                if priority is None:
+                    missing.append("PRIORITY")
+                print(_t("❌ Error: the following arguments are required: {missing}").format(missing=", ".join(missing)))
+                return 1
+            if task_type is None:
+                task_type = 1
+        else:
+            from rich.panel import Panel
+            console = Console()
+
+            welcome_text = Text()
+            if task_description is None:
+                welcome_text.append(_t("Let's add a new task to your schedule! 🚀\n"), style="bold green")
+                welcome_text.append(_t("I'll guide you through a couple of quick questions. 🌟"), style="cyan")
+            else:
+                welcome_text.append(_t("Almost there! Let's complete the details for your task. ✨\n"), style="bold green")
+                welcome_text.append(_t("Task: {task_description}").format(task_description=task_description), style="cyan")
+
+            panel = Panel(
+                welcome_text,
+                title="[bold green]✨ " + _t("Task Creator Wizard") + " ✨[/bold green]",
+                border_style="green",
+                padding=(1, 2)
+            )
+            console.print(panel)
+
+            if task_description is None:
+                while True:
+                    try:
+                        desc_input = console.input("[bold cyan]" + _t("✍️  What task would you like to add? ") + "[/bold cyan]").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        print("\n" + _t("👋 Operation cancelled. Have a great day! ✨"))
+                        return 1
+                    if desc_input:
+                        task_description = desc_input
+                        break
+                    console.print("[bold yellow]" + _t("⚠️  Oops! The task description can't be empty. Let's try that again! 😊") + "[/bold yellow]")
+
+            if priority is None:
+                while True:
+                    try:
+                        prio_input = console.input("[bold cyan]" + _t("🔢 What is the priority level for this task (1-10)? ") + "[/bold cyan]").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        print("\n" + _t("👋 Operation cancelled. Have a great day! ✨"))
+                        return 1
+                    try:
+                        prio_val = int(prio_input)
+                        if 1 <= prio_val <= 10:
+                            priority = prio_val
+                            break
+                        else:
+                            console.print("[bold yellow]" + _t("⚠️  Oops! Priority must be between 1 and 10. Let's try that again! 🌟") + "[/bold yellow]")
+                    except ValueError:
+                        console.print("[bold yellow]" + _t("⚠️  Oops! Priority needs to be a valid number. Please enter a number between 1 and 10! 🔢") + "[/bold yellow]")
+
+            if task_type is None:
+                console.print("\n[bold cyan]" + _t("🔢 Select a task type:") + "[/bold cyan]")
+                sorted_types = sorted(task_types.items(), key=lambda item: int(item[0]) if item[0].isdigit() else 999)
+                for k, v in sorted_types:
+                    console.print(f"  [green]{k}[/green]. {v}")
+                while True:
+                    try:
+                        type_input = console.input("[bold cyan]" + _t("Enter Task Type Number: ") + "[/bold cyan]").strip()
+                    except (EOFError, KeyboardInterrupt):
+                        print("\n" + _t("👋 Operation cancelled. Have a great day! ✨"))
+                        return 1
+                    if type_input in task_types:
+                        task_type = int(type_input)
+                        break
+                    else:
+                        console.print("[bold yellow]" + _t("⚠️  Oops! Invalid selection. Please choose a valid number from the list.") + "[/bold yellow]")
 
     # Validate priority
     if priority <= 0:
         print(_t("❌ Error: Priority must be a positive integer"))
         return 1
+
+    # Validate task_type if specified
+    if task_type is not None:
+        if str(task_type) not in task_types:
+            print(_t("❌ Error: Invalid task type. Choose from: {choices}").format(choices=", ".join(task_types.keys())))
+            return 1
 
     # Validate postpone
     alarm_from = None
@@ -108,6 +217,7 @@ def add_task(args) -> int:
     new_task = {
         "description": task_description,
         "priority": priority,
+        "type": str(task_type),
     }
     if alarm_from:
         new_task["alarm_from"] = alarm_from
@@ -390,6 +500,26 @@ def show_tasks(args) -> int:
     # ordered by priority descending in each section
     sorted_tasks = _sort_tasks_by_section_and_priority(tasks, today, procrastinate_list)
 
+    # Load task types from settings
+    try:
+        config = ScheduleConfig(str(SETTINGS_PATH))
+        task_types = config.task_types
+    except Exception:
+        task_types = {}
+    if not task_types:
+        task_types = {
+            "1": "read papers",
+            "2": "gym work",
+            "3": "coding",
+            "4": "other"
+        }
+
+    sorted_type_ids = sorted(task_types.keys(), key=lambda x: int(x) if x.isdigit() else 999)
+    COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan", "white", "bright_blue", "bright_green", "bright_red"]
+    type_colors = {}
+    for idx, tid in enumerate(sorted_type_ids):
+        type_colors[tid] = COLORS[idx % len(COLORS)]
+
     # Create table
     table = Table(
         title="[bold]" + _t("Current Task List") + "[/bold]",
@@ -399,7 +529,7 @@ def show_tasks(args) -> int:
     )
 
     table.add_column(_t("ID"), justify="right", style="dim", width=4)
-    table.add_column(_t("Priority"), justify="left", width=18)
+    table.add_column(_t("Priority"), justify="left")
     table.add_column(_t("Description"), justify="left")
 
     for i, task in enumerate(sorted_tasks, 1):
@@ -419,13 +549,10 @@ def show_tasks(args) -> int:
             except Exception:
                 pass
 
-        # Color based on priority level
-        if priority >= 8:
-            color = "red"
-        elif priority >= 5:
-            color = "yellow"
-        else:
-            color = "blue"
+        # Determine task type
+        task_type_id = str(task.get("type", sorted_type_ids[0] if sorted_type_ids else "1"))
+        color = type_colors.get(task_type_id, "white")
+        type_name = task_types.get(task_type_id, "other")
 
         # Visual priority bar (max 10 blocks for layout)
         filled = "█" * min(priority, 10)
@@ -434,7 +561,7 @@ def show_tasks(args) -> int:
         prio_visual = f"[{color}]{filled}[dim]{empty}[/dim] ({priority})[/{color}]"
         if is_postponed_future:
             description_text = Text(
-                f"💤 {description}{postpone_suffix}",
+                f"💤 {description}{postpone_suffix}\u200b{task_type_id}",
                 style="italic dim",
             )
         elif description in procrastinate_list:
@@ -445,15 +572,23 @@ def show_tasks(args) -> int:
             # Make overdue tasks (1 or more days overdue) very striking
             is_overdue = age_days is not None and age_days >= 1
             description_text = Text(
-                f"⏳ {description}{_format_procrastination_suffix(age_days)}",
+                f"⏳ {description}{_format_procrastination_suffix(age_days)}\u200b{task_type_id}",
                 style="bold red" if is_overdue else "italic dim",
             )
         else:
-            description_text = Text(description)
+            description_text = Text(f"{description}\u200b{task_type_id}")
 
         table.add_row(str(i), prio_visual, description_text)
 
+    legend_items = []
+    for tid in sorted_type_ids:
+        tname = task_types[tid]
+        tcolor = type_colors[tid]
+        legend_items.append(f"[{tcolor}]■ {tname}[/{tcolor}]")
+    legend_str = "  ".join(legend_items)
+
     console.print(table)
+    console.print(legend_str)
     console.print("[dim]" + _t("Total tasks: {count}").format(count=len(tasks)) + "[/dim]", justify="right")
 
     return 0

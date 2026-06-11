@@ -61,6 +61,23 @@ ZH_TRANSLATIONS = {
     # -------------------------------------------------------------------------
     # Tasks Command (tasks.py)
     # -------------------------------------------------------------------------
+    "❌ Error: the following arguments are required: {missing}": "❌ 错误：以下参数是必填的：{missing}",
+    "Let's add a new task to your schedule! 🚀\n": "让我们为您的日程添加一个新任务！🚀\n",
+    "I'll guide you through a couple of quick questions. 🌟": "我将引导您完成几个快速问题。🌟",
+    "Almost there! Let's complete the details for your task. ✨\n": "快好了！让我们为您的任务补充细节。✨\n",
+    "Task: {task_description}": "任务: {task_description}",
+    "Task Creator Wizard": "任务创建向导",
+    "✍️  What task would you like to add? ": "✍️ 您想添加什么任务？",
+    "⚠️  Oops! The task description can't be empty. Let's try that again! 😊": "⚠️ 哎呀！任务描述不能为空。让我们再试一次！😊",
+    "🔢 What is the priority level for this task (1-10)? ": "🔢 这个任务的优先级是多少 (1-10)？",
+    "⚠️  Oops! Priority must be between 1 and 10. Let's try that again! 🌟": "⚠️ 哎呀！优先级必须在 1 到 10 之间。让我们再试一次！🌟",
+    "⚠️  Oops! Priority needs to be a valid number. Please enter a number between 1 and 10! 🔢": "⚠️ 哎呀！优先级必须是一个有效的数字。请输入 1 到 10 之间的数字！🔢",
+    "🔢 Select a task type:": "🔢 选择任务类型：",
+    "Enter Task Type Number: ": "请输入任务类型编号：",
+    "⚠️  Oops! Invalid selection. Please choose a valid number from the list.": "⚠️ 哎呀！选择无效。请从列表中选择一个有效的编号。",
+    "❌ Error: Invalid task type. Choose from: {choices}": "❌ 错误：无效的任务类型。可选范围：{choices}",
+    "Legend:": "图例：",
+    "👋 Operation cancelled. Have a great day! ✨": "👋 操作已取消。祝您度过美好的一天！✨",
     "❌ Error: Priority must be a positive integer": "❌ 错误：优先级必须是正整数",
     "✅ Task '{task_description}' updated! Priority changed from {old_priority} to {priority}": "✅ 任务 '{task_description}' 已更新！优先级从 {old_priority} 修改为 {priority}",
     "⚠️  Warning: Could not log task update: {e}": "⚠️ 警告：无法记录任务更新日志：{e}",

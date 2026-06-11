@@ -154,14 +154,25 @@ def create_parser() -> argparse.ArgumentParser:
     )
     add_parser.add_argument(
         "task",
+        nargs="?",
+        default=None,
         help="Description of the task (e.g., 'biology homework')",
     )
     add_parser.add_argument(
         "priority",
         type=int,
+        nargs="?",
+        default=None,
         choices=range(1, 11),
         metavar="PRIORITY",
         help="Priority level 1-10 (higher = more important)",
+    )
+    add_parser.add_argument(
+        "task_type",
+        type=int,
+        nargs="?",
+        default=None,
+        help="Task type ID (e.g., 1 for 'read papers')",
     )
     add_parser.add_argument(
         "postpone",

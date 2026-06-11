@@ -241,6 +241,11 @@ class SettingsTUI:
         self.mode = _Mode.BROWSE
         self.message = ""
 
+        # Drill-down browse state: level 0 = sections, level 1 = keys
+        self.browse_level = 0
+        self.browse_section = ""
+        self.section_cursor = 0
+
         # Picker / multi-select state
         self.picker_choices: list[str] = []
         self.picker_cursor = 0
@@ -273,12 +278,41 @@ class SettingsTUI:
     # --------------------------------------------------------------------- #
 
     def _build_rows(self) -> None:
+        if self.browse_level == 0:
+            self.rows = []
+            return
         self.rows = []
-        for section in self.model.sections():
-            self.rows.append(Row(section))
-            for key in self.model.keys_in(section):
-                self.rows.append(Row(section, key))
+        section = self.browse_section
+        for key in self.model.keys_in(section):
+            self.rows.append(Row(section, key))
         self._clamp_cursor()
+
+    def _sections_list(self) -> list[str]:
+        return self.model.sections()
+
+    def _move_section(self, delta: int) -> None:
+        sections = self._sections_list()
+        if not sections:
+            return
+        self.section_cursor = max(0, min(len(sections) - 1, self.section_cursor + delta))
+
+    def _drill_into_section(self) -> None:
+        sections = self._sections_list()
+        if not sections or self.section_cursor >= len(sections):
+            return
+        self.browse_section = sections[self.section_cursor]
+        self.browse_level = 1
+        self.cursor = 0
+        self.scroll_offset = 0
+        self._build_rows()
+
+    def _go_back_to_sections(self) -> None:
+        sections = self._sections_list()
+        self.browse_level = 0
+        if self.browse_section in sections:
+            self.section_cursor = sections.index(self.browse_section)
+        self.browse_section = ""
+        self.rows = []
 
     def _nav_indices(self) -> list[int]:
         return [i for i, r in enumerate(self.rows) if not r.is_header]
@@ -347,56 +381,98 @@ class SettingsTUI:
     # ---- Browse --------------------------------------------------------- #
 
     def _render_browse(self) -> Panel:
+        if self.browse_level == 0:
+            return self._render_sections_view()
+        return self._render_keys_view()
+
+    def _render_sections_view(self) -> Panel:
+        sections = self._sections_list()
         th = self.console.size.height
         viewport = max(5, th - 10)
 
-        # Scroll to keep cursor visible
+        if self.section_cursor < self.scroll_offset:
+            self.scroll_offset = self.section_cursor
+        elif self.section_cursor >= self.scroll_offset + viewport:
+            self.scroll_offset = self.section_cursor - viewport + 1
+
+        t = Text()
+        end = min(len(sections), self.scroll_offset + viewport)
+        for idx in range(self.scroll_offset, end):
+            section = sections[idx]
+            sel = idx == self.section_cursor
+            prefix = "  ▸ " if sel else "    "
+            label = SECTION_LABELS.get(section, section)
+            key_count = len(self.model.keys_in(section))
+            style = "bold cyan" if sel else "cyan"
+            t.append(prefix, style=style)
+            t.append(label, style=style)
+            t.append(f"  ({key_count} keys)\n", style="dim")
+
+        if self.scroll_offset > 0:
+            t.append("    ↑ more above\n", style="dim italic")
+        if end < len(sections):
+            t.append("    ↓ more below\n", style="dim italic")
+
+        t.append("\n\n  [↑↓] Navigate  [Enter] Open section  ", style="dim")
+        t.append("[s] Save  [q] Quit  [e/x] Exit", style="dim")
+
+        if self.message:
+            t.append(f"\n\n  {self.message}", style="green")
+
+        title = "⚙  Settings"
+        if self.model.dirty:
+            title += "  •  modified"
+        return Panel(t, title=title, border_style="bright_blue", padding=(0, 1))
+
+    def _render_keys_view(self) -> Panel:
+        th = self.console.size.height
+        viewport = max(5, th - 10)
+
         if self.cursor < self.scroll_offset:
             self.scroll_offset = self.cursor
         elif self.cursor >= self.scroll_offset + viewport:
             self.scroll_offset = self.cursor - viewport + 1
 
         t = Text()
+        section_label = SECTION_LABELS.get(self.browse_section, self.browse_section)
+        t.append(f"  ← {section_label}\n\n", style="bold cyan")
+
         end = min(len(self.rows), self.scroll_offset + viewport)
         for idx in range(self.scroll_offset, end):
             row = self.rows[idx]
-            if row.is_header:
-                label = SECTION_LABELS.get(row.section, row.section)
-                t.append(f"\n  {label}\n", style="bold cyan")
-            else:
-                sel = idx == self.cursor
-                prefix = "  ▸ " if sel else "    "
-                val = self.model.get(row.section, row.key)
-                fv = self._fmt_val(val)
-                kstyle = "bold white" if sel else "white"
-                vstyle = "bold yellow" if sel else "dim"
-                assert row.key is not None
-                t.append(prefix, style=kstyle)
-                t.append(f"{row.key:<26s}", style=kstyle)
-                t.append(f"{fv}\n", style=vstyle)
+            sel = idx == self.cursor
+            prefix = "  ▸ " if sel else "    "
+            val = self.model.get(row.section, row.key)
+            fv = self._fmt_val(val)
+            kstyle = "bold white" if sel else "white"
+            vstyle = "bold yellow" if sel else "dim"
+            assert row.key is not None
+            t.append(prefix, style=kstyle)
+            t.append(f"{row.key:<26s}", style=kstyle)
+            t.append(f"{fv}\n", style=vstyle)
 
-        # Scroll hints
+        if not self.rows:
+            t.append("    (no keys in this section)\n", style="dim")
+
         if self.scroll_offset > 0:
             t.append("    ↑ more above\n", style="dim italic")
         if end < len(self.rows):
             t.append("    ↓ more below\n", style="dim italic")
 
-        # Help for selected row
         row = self._current_row()
         if not row.is_header and row.key:
             meta = _get_meta(row.section, row.key)
             if meta.help_text:
                 t.append(f"\n  ℹ  {meta.help_text}", style="dim italic")
 
-        # Key bindings
         t.append("\n\n  [↑↓] Navigate  [Enter] Edit  [Space] Toggle  ", style="dim")
-        t.append("[a] Add  [d] Delete\n", style="dim")
+        t.append("[a] Add  [d] Delete  [Backspace] Back\n", style="dim")
         t.append("  [s] Save  [q] Quit  [e/x] Exit", style="dim")
 
         if self.message:
             t.append(f"\n\n  {self.message}", style="green")
 
-        title = "⚙  Settings"
+        title = f"⚙  Settings › {section_label}"
         if self.model.dirty:
             title += "  •  modified"
         return Panel(t, title=title, border_style="bright_blue", padding=(0, 1))
@@ -526,6 +602,31 @@ class SettingsTUI:
     # ---- Browse --------------------------------------------------------- #
 
     def _on_browse(self, key: str, rc: Any) -> str | None:
+        if self.browse_level == 0:
+            return self._on_sections_view(key, rc)
+        return self._on_keys_view(key, rc)
+
+    def _on_sections_view(self, key: str, rc: Any) -> str | None:
+        if key == rc.key.UP:
+            self._move_section(-1)
+        elif key == rc.key.DOWN:
+            self._move_section(1)
+        elif key in (rc.key.ENTER, "\r", "\n"):
+            self._drill_into_section()
+        elif key == "s":
+            try:
+                self.model.save()
+                self.message = "✅ Settings saved"
+            except Exception as exc:
+                self.message = f"❌ Save failed: {exc}"
+        elif key in ("q", "e", "x", "\x1b"):
+            if self.model.dirty:
+                self.mode = _Mode.CONFIRM_QUIT
+            else:
+                return "quit"
+        return None
+
+    def _on_keys_view(self, key: str, rc: Any) -> str | None:
         if key == rc.key.UP:
             self._move(-1)
         elif key == rc.key.DOWN:
@@ -542,6 +643,8 @@ class SettingsTUI:
                     self.message = f"Toggled {row.key}"
                 else:
                     self._start_edit()
+        elif key in (rc.key.BACKSPACE, "\x7f", "\x08", rc.key.LEFT):
+            self._go_back_to_sections()
         elif key == "s":
             try:
                 self.model.save()
@@ -561,7 +664,7 @@ class SettingsTUI:
                 self.message = f"Deleted {row.key}"
         elif key == "a":
             row = self._current_row()
-            self._add_section = row.section
+            self._add_section = row.section if row.key else self.browse_section
             self.edit_buffer = ""
             self.mode = _Mode.ADD_KEY
         return None

@@ -26,3 +26,9 @@ config_dir = "tests/config"
 tasks_path = "test_tasks.json"
 # Path to task log JSON file (relative to config_dir or absolute)
 log_path = "~/.schedule_management/task/tasks.log"
+
+[task_types]
+1 = "read papers"
+2 = "gym work"
+3 = "coding"
+4 = "other"

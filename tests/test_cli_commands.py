@@ -1045,6 +1045,28 @@ class TestTaskManagement:
         assert saved_tasks[0]["description"] == "Complete project"
         assert saved_tasks[0]["priority"] == 7
 
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_with_type_success(self, mock_save_tasks, mock_load_tasks):
+        """Test adding a task with a specific task_type successfully."""
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+
+        args = MagicMock()
+        args.task = "Workout"
+        args.priority = 6
+        args.task_type = 2
+
+        result = reminder.add_task(args)
+
+        assert result == 0
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert saved_tasks[0]["description"] == "Workout"
+        assert saved_tasks[0]["priority"] == 6
+        assert saved_tasks[0]["type"] == "2"
+
     @patch("schedule_management.commands.tasks.show_tasks")
     @patch("schedule_management.commands.tasks.save_tasks")
     @patch("schedule_management.commands.tasks.load_tasks")
@@ -1256,6 +1278,130 @@ class TestTaskManagement:
         saved_tasks = mock_save_tasks.call_args[0][0]
         assert len(saved_tasks) == 1
         assert "alarm_from" not in saved_tasks[0]
+
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    def test_add_task_missing_params_non_interactive(self, mock_isatty):
+        """Test adding a task with missing parameters in non-interactive environment fails."""
+        mock_isatty.return_value = False
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 1
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_missing_params_interactive_success(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty
+    ):
+        """Test successfully prompting for missing parameters in interactive environment."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+
+        # Simulate user entering task description first, priority, then task type
+        mock_console_input.side_effect = ["Buy groceries", "5", "2"]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert saved_tasks[0]["description"] == "Buy groceries"
+        assert saved_tasks[0]["priority"] == 5
+        assert saved_tasks[0]["type"] == "2"
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_missing_priority_interactive_success(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty
+    ):
+        """Test prompting only for priority when task description is provided."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+
+        # Simulate user entering priority, then task type
+        mock_console_input.side_effect = ["8", "1"]
+
+        args = MagicMock()
+        args.task = "Study science"
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert saved_tasks[0]["description"] == "Study science"
+        assert saved_tasks[0]["priority"] == 8
+        assert saved_tasks[0]["type"] == "1"
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    def test_add_task_interactive_user_cancel(self, mock_console_input, mock_isatty):
+        """Test interactive prompting when user cancels (KeyboardInterrupt)."""
+        mock_isatty.return_value = True
+        mock_console_input.side_effect = KeyboardInterrupt()
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 1
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_invalid_inputs_retry(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty
+    ):
+        """Test retrying on invalid input (empty description, invalid priority)."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+
+        # 1. empty description, then valid description
+        # 2. invalid priority (string), invalid priority (out of range), then valid priority
+        # 3. invalid task type (out of range), then valid task type
+        mock_console_input.side_effect = [
+            "",
+            "Valid Task",
+            "abc",
+            "12",
+            "6",
+            "99",
+            "3"
+        ]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert saved_tasks[0]["description"] == "Valid Task"
+        assert saved_tasks[0]["priority"] == 6
+        assert saved_tasks[0]["type"] == "3"
 
 
     @patch("schedule_management.commands.tasks.load_tasks")
@@ -1916,7 +2062,9 @@ class TestTaskManagement:
             if hasattr(cell, "plain") and cell.plain.startswith("⏳ ")
         ]
         assert len(procrastinated_cells) == 1
-        assert procrastinated_cells[0].plain == "⏳ Delayed task (3 days overdue)"
+        # Strip zero-width type tag suffix for comparison
+        clean_plain = procrastinated_cells[0].plain.split("\u200b")[0]
+        assert clean_plain == "⏳ Delayed task (3 days overdue)"
         assert procrastinated_cells[0].style == "bold red"
 
     @patch("schedule_management.commands.tasks.load_tasks")
@@ -1965,9 +2113,11 @@ class TestTaskManagement:
         ]
         assert len(postponed_cells) == 2
         # Highest priority first
-        assert postponed_cells[0].plain == "💤 Task tomorrow (coming tomorrow)"
+        clean_plain_0 = postponed_cells[0].plain.split("\u200b")[0]
+        clean_plain_1 = postponed_cells[1].plain.split("\u200b")[0]
+        assert clean_plain_0 == "💤 Task tomorrow (coming tomorrow)"
         assert postponed_cells[0].style == "italic dim"
-        assert postponed_cells[1].plain == "💤 Task in 2 days (coming in 2 days)"
+        assert clean_plain_1 == "💤 Task in 2 days (coming in 2 days)"
         assert postponed_cells[1].style == "italic dim"
 
 
@@ -2018,9 +2168,9 @@ class TestTaskManagement:
 
         assert result == 0
 
-        # Extract the description strings that were added as rows
+        # Extract the description strings that were added as rows and strip type tags
         added_rows = [
-            call.args[2].plain
+            call.args[2].plain.split("\u200b")[0]
             for call in mock_table.add_row.call_args_list
             if len(call.args) >= 3
         ]
@@ -2298,7 +2448,7 @@ class TestSettingsCommand:
                 )
 
     def test_settings_tui_row_building(self, tmp_path):
-        """Test TUI builds correct rows from model data."""
+        """Test TUI builds correct rows from model data with hierarchical browse."""
         from schedule_management.commands.settings import SettingsModel, SettingsTUI
 
         settings_file = tmp_path / "settings.toml"
@@ -2310,16 +2460,34 @@ class TestSettingsCommand:
         model = SettingsModel(settings_file)
         tui = SettingsTUI(model)
 
-        # Expect: header, a, b, header, c
-        assert len(tui.rows) == 5
-        assert tui.rows[0].is_header and tui.rows[0].section == "settings"
-        assert tui.rows[1].key == "a"
-        assert tui.rows[2].key == "b"
-        assert tui.rows[3].is_header and tui.rows[3].section == "paths"
-        assert tui.rows[4].key == "c"
+        # Level 0: sections view — rows is empty (sections rendered separately)
+        assert tui.browse_level == 0
+        assert len(tui.rows) == 0
+        assert tui._sections_list() == ["settings", "paths"]
 
-        # Cursor should start on first navigable row
-        assert tui.cursor == 1
+        # Drill into "settings" section
+        tui.section_cursor = 0
+        tui._drill_into_section()
+        assert tui.browse_level == 1
+        assert tui.browse_section == "settings"
+        assert len(tui.rows) == 2
+        assert tui.rows[0].key == "a"
+        assert tui.rows[1].key == "b"
+        assert tui.cursor == 0
+
+        # Go back to sections
+        tui._go_back_to_sections()
+        assert tui.browse_level == 0
+        assert tui.section_cursor == 0
+        assert len(tui.rows) == 0
+
+        # Drill into "paths" section
+        tui.section_cursor = 1
+        tui._drill_into_section()
+        assert tui.browse_level == 1
+        assert tui.browse_section == "paths"
+        assert len(tui.rows) == 1
+        assert tui.rows[0].key == "c"
 
     @patch("sys.stdin")
     def test_settings_command_missing_file(self, mock_stdin, tmp_path, monkeypatch, capsys):

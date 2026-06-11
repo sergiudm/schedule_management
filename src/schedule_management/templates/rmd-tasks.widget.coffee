@@ -46,12 +46,22 @@ style: """
     word-break: break-word
     overflow-wrap: break-word
 
-  .prio-high
-    color: #ff6b6b
-  .prio-mid
-    color: #ffd93d
-  .prio-low
-    color: #6bc5ff
+  .type-1
+    color: #ff6b6b   // red
+  .type-2
+    color: #51cf66   // green
+  .type-3
+    color: #6bc5ff   // blue
+  .type-4
+    color: #ffd93d   // yellow
+  .type-5
+    color: #cc5de8   // magenta
+  .type-6
+    color: #15aabf   // cyan
+  .type-7
+    color: #e0e0e0   // white
+  .type-default
+    color: #e0e0e0
 
   .overdue
     color: #ff6b6b
@@ -100,20 +110,22 @@ render: (output) ->
   html = '<div class="header">📋 Tasks</div>'
 
   for task in tasks
-    prioNum = parseInt(task.priority.match(/\((\d+)\)/)?[1] or '0')
-    prioClass = if prioNum >= 8 then 'prio-high' else if prioNum >= 5 then 'prio-mid' else 'prio-low'
+    typeMatch = task.desc.match(/\u200b(\d+)/)
+    typeId = if typeMatch then typeMatch[1] else 'default'
+    prioClass = "type-#{typeId}"
+    cleanDesc = task.desc.replace(/\u200b\d+/, '')
 
     descClass = 'task-desc'
-    if task.desc.indexOf('⏳') >= 0
+    if cleanDesc.indexOf('⏳') >= 0
       descClass += ' overdue'
-    else if task.desc.indexOf('💤') >= 0
+    else if cleanDesc.indexOf('💤') >= 0
       descClass += ' postponed'
 
     html += """
       <div class="task-row">
         <span class="task-id">#{task.id}</span>
         <span class="task-priority #{prioClass}">#{task.priority}</span>
-        <span class="#{descClass}">#{task.desc}</span>
+        <span class="#{descClass}">#{cleanDesc}</span>
       </div>
     """
 

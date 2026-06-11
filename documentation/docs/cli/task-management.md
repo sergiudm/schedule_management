@@ -12,7 +12,7 @@ Add a new task or update an existing one with an importance level.
 
 ### Syntax
 ```bash
-rmd add "TASK_DESCRIPTION" PRIORITY_LEVEL [POSTPONE_DAYS]
+rmd add "TASK_DESCRIPTION" PRIORITY_LEVEL [TASK_TYPE] [POSTPONE_DAYS]
 ```
 
 ### Parameters
@@ -20,25 +20,28 @@ rmd add "TASK_DESCRIPTION" PRIORITY_LEVEL [POSTPONE_DAYS]
 |-----------|------|-------------|
 | `TASK_DESCRIPTION` | string | Description of the task (quoted if contains spaces) |
 | `PRIORITY_LEVEL` | integer | Priority level from 1-10 (higher = more important) |
+| `TASK_TYPE` | integer (optional) | Task type ID as configured in `settings.toml` (e.g. 1 for "read papers", 2 for "gym work") |
 | `POSTPONE_DAYS` | integer (optional) | Number of days to postpone the daily urgent alarm (e.g. 1 for tomorrow, 2 for two days later) |
 
 ### Examples
 ```bash
-# Add basic task
+# Add basic task (defaults to task type 1)
 rmd add "Complete project proposal" 8
 
-# Add task with spaces in description
-rmd add "Review pull request #123" 5
+# Add task with a specific task type (e.g. 2 for gym work)
+rmd add "Go to the gym" 7 2
 
-# Add high-priority task
-rmd add "Call dentist" 9
-
-# Add task with alarm postponed to tomorrow
-rmd add "Biology homework" 9 1
-
-# Add task with alarm postponed for two days
-rmd add "Fix buggy script" 8 2
+# Add high-priority task with a specific type and alarm postponed to tomorrow
+rmd add "Biology homework" 9 1 1
 ```
+
+### Interactive Mode
+If you run `rmd add` directly without parameters in an interactive terminal, or if you omit some parameters, the system will display a friendly **Task Creator Wizard** panel, guiding you through a couple of quick questions one by one with emojis to complete the task description, priority level, and task type.
+
+If you are running in a non-interactive environment (such as a script), omitting the required parameters will print an error message and exit with an error code. Any omitted optional parameters (like task type) will fall back to their default values (e.g. task type 1).
+
+### Task List Color Coding & Legend
+In `rmd ls`, the color of each task row/priority bar represents the **Task Type** instead of the priority level. A color legend is displayed at the bottom of the task list showing the association between colors and task types configured in `settings.toml`.
 
 ### Smart Duplicate Handling
 If you add a task with the same description as an existing task, it updates the priority level instead of creating a duplicate:
