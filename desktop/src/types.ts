@@ -24,6 +24,11 @@ export type SchedulePreviewEvent = {
 export type TaskItem = {
   description: string;
   priority: number;
+  type: string;
+  typeName: string;
+  alarmFrom: string | null;
+  procrastinated: boolean;
+  procrastinateDays: number | null;
 };
 
 export type DeadlineItem = {
@@ -37,6 +42,14 @@ export type HabitItem = {
   id: string;
   description: string;
   completed: boolean;
+};
+
+export type HistoryItem = {
+  description: string;
+  priority: number;
+  startedAt: string;
+  endedAt: string;
+  duration: string;
 };
 
 export type Snapshot = {
@@ -65,6 +78,8 @@ export type Snapshot = {
   tasks: TaskItem[];
   deadlines: DeadlineItem[];
   habits: HabitItem[];
+  taskTypes: Record<string, string>;
+  history: HistoryItem[];
 };
 
 export type SyncProposal = {

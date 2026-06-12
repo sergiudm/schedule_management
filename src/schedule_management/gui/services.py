@@ -13,10 +13,13 @@ from typing import Any
 
 from schedule_management.commands import status as status_commands
 from schedule_management.commands.deadlines import prune_expired_deadlines
+from schedule_management.commands.history import _format_duration, _pair_task_activities
+from schedule_management.commands.settings import DEFAULT_TASK_TYPES
 from schedule_management.commands.status import (
     get_current_and_next_events,
     get_today_schedule_for_status,
 )
+from schedule_management.config import ScheduleConfig
 from schedule_management.config_layout import (
     RuntimePaths,
     preview_active_config_dir,
@@ -26,11 +29,14 @@ from schedule_management.data import (
     load_deadlines,
     load_habit_records,
     load_habits,
+    load_procrastinate_records,
+    load_task_log,
     load_tasks,
     log_task_action,
     save_deadlines,
     save_habit_records,
     save_tasks,
+    get_procrastinate_age_days,
 )
 from schedule_management.synced_schedule import (
     format_event_label,
@@ -172,7 +178,27 @@ def _parse_deadline_date(raw_date: str) -> str:
         raise GuiError("invalid_input", f"invalid deadline date: {exc}") from exc
 
 
+def _load_task_types() -> dict[str, str]:
+    try:
+        runtime_paths = _snapshot_runtime_paths()
+        config = ScheduleConfig(str(runtime_paths.settings_path))
+        task_types = config.task_types
+    except Exception:
+        task_types = {}
+    if not task_types:
+        task_types = dict(DEFAULT_TASK_TYPES)
+    return task_types
+
+
 def _sorted_tasks() -> list[dict[str, Any]]:
+    today = _today()
+    task_types = _load_task_types()
+    sorted_type_ids = sorted(task_types.keys(), key=lambda x: int(x) if x.isdigit() else 999)
+    default_type = sorted_type_ids[0] if sorted_type_ids else "1"
+
+    procrastinate_records = load_procrastinate_records()
+    procrastinate_list = set(procrastinate_records)
+
     normalized: list[dict[str, Any]] = []
     for task in load_tasks():
         if not isinstance(task, dict):
@@ -184,13 +210,54 @@ def _sorted_tasks() -> list[dict[str, Any]]:
             priority = int(task.get("priority", 0))
         except (TypeError, ValueError):
             priority = 0
+
+        task_type = str(task.get("type", default_type))
+        type_name = task_types.get(task_type, task_types.get(default_type, "other"))
+
+        alarm_from = task.get("alarm_from")
+        alarm_from_str: str | None = None
+        days_left = 0
+        if isinstance(alarm_from, str) and alarm_from.strip():
+            alarm_from_str = alarm_from.strip()
+            try:
+                alarm_date = datetime.strptime(alarm_from_str, "%Y-%m-%d").date()
+                days_left = (alarm_date - today).days
+            except ValueError:
+                days_left = 0
+
+        is_postponed_future = days_left > 0
+        is_procrastinated = (not is_postponed_future) and (description in procrastinate_list)
+        procrastinate_days: int | None = None
+        if is_procrastinated:
+            record = procrastinate_records.get(description, {})
+            procrastinate_days = get_procrastinate_age_days(
+                record.get("since"), today=today
+            )
+
+        if is_procrastinated:
+            section = 0
+        elif not is_postponed_future:
+            section = 1
+        else:
+            section = 2
+
         normalized.append(
             {
                 "description": description.strip(),
                 "priority": priority,
+                "type": task_type,
+                "typeName": type_name,
+                "alarmFrom": alarm_from_str,
+                "procrastinated": is_procrastinated,
+                "procrastinateDays": procrastinate_days,
+                "_section": section,
             }
         )
-    return sorted(normalized, key=lambda item: item["priority"], reverse=True)
+
+    normalized.sort(key=lambda item: (item["_section"], -item["priority"]))
+    for item in normalized:
+        del item["_section"]
+    return normalized
 
 
 def _deadline_status(deadline_date: date, current_date: date) -> str:
@@ -327,14 +394,45 @@ def status_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
         "tasks": _sorted_tasks(),
         "deadlines": _deadline_rows(current_date),
         "habits": _habit_rows(current_date),
+        "taskTypes": _load_task_types(),
+        "history": _history_rows(),
     }
 
 
 def task_add(payload: dict[str, Any]) -> dict[str, Any]:
     description = _require_text(payload, "description")
     priority = _require_priority(payload)
+
+    task_types = _load_task_types()
+    raw_type = payload.get("type")
+    task_type = str(raw_type).strip() if raw_type is not None else ""
+    if not task_type:
+        sorted_type_ids = sorted(task_types.keys(), key=lambda x: int(x) if x.isdigit() else 999)
+        task_type = sorted_type_ids[0] if sorted_type_ids else "1"
+    elif task_type not in task_types:
+        raise GuiError("invalid_input", f"unknown task type: {task_type}")
+
+    postpone = payload.get("postpone")
+    alarm_from: str | None = None
+    if postpone is not None:
+        try:
+            postpone_days = int(postpone)
+        except (TypeError, ValueError):
+            raise GuiError("invalid_input", "postpone must be an integer.") from None
+        if postpone_days < 0:
+            raise GuiError("invalid_input", "postpone days must be non-negative.")
+        if postpone_days > 0:
+            from datetime import timedelta
+            alarm_from = (_today() + timedelta(days=postpone_days)).isoformat()
+
     tasks = load_tasks()
-    new_task = {"description": description, "priority": priority}
+    new_task: dict[str, Any] = {
+        "description": description,
+        "priority": priority,
+        "type": task_type,
+    }
+    if alarm_from:
+        new_task["alarm_from"] = alarm_from
 
     existing_index = None
     for index, task in enumerate(tasks):
@@ -494,3 +592,78 @@ def habit_mark(payload: dict[str, Any]) -> dict[str, Any]:
 
     _save_habit_records_or_error(records)
     return new_record
+
+
+def _history_rows(count: int = 5) -> list[dict[str, Any]]:
+    try:
+        log_entries = load_task_log()
+    except Exception:
+        return []
+    if not log_entries:
+        return []
+    activities = _pair_task_activities(log_entries)
+    if not activities:
+        return []
+    recent = activities[-count:]
+    recent.reverse()
+    return [
+        {
+            "description": a["description"],
+            "priority": a["priority"],
+            "startedAt": a["started_at"].isoformat(),
+            "endedAt": a["ended_at"].isoformat(),
+            "duration": _format_duration(a["started_at"], a["ended_at"]),
+        }
+        for a in recent
+    ]
+
+
+def task_history(payload: dict[str, Any]) -> dict[str, Any]:
+    count = payload.get("count", 10)
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = 10
+    if count < 1:
+        count = 1
+    if count > 50:
+        count = 50
+    return {"activities": _history_rows(count)}
+
+
+def settings_get_task_types(payload: dict[str, Any]) -> dict[str, Any]:
+    del payload
+    return {"taskTypes": _load_task_types()}
+
+
+def settings_set_task_types(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_types = payload.get("taskTypes")
+    if not isinstance(raw_types, dict):
+        raise GuiError("invalid_input", "taskTypes must be an object.")
+
+    validated: dict[str, str] = {}
+    for key, value in raw_types.items():
+        key_str = str(key).strip()
+        value_str = str(value).strip() if value is not None else ""
+        if not key_str:
+            raise GuiError("invalid_input", "task type keys must be non-empty.")
+        if not value_str:
+            raise GuiError("invalid_input", f"task type '{key_str}' name must be non-empty.")
+        validated[key_str] = value_str
+
+    runtime_paths = _snapshot_runtime_paths()
+    from schedule_management.commands.settings import SettingsModel
+
+    try:
+        model = SettingsModel(runtime_paths.settings_path)
+    except Exception as exc:
+        raise GuiError("config_error", f"failed to load settings: {exc}") from exc
+
+    model.data["task_types"] = validated
+    model.dirty = True
+    try:
+        model.save()
+    except Exception as exc:
+        raise GuiError("storage_error", f"failed to save settings: {exc}") from exc
+
+    return {"taskTypes": validated}

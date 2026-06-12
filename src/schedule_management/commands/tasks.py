@@ -42,6 +42,7 @@ from schedule_management.data import (
     get_procrastinate_age_days,
     log_task_action,
 )
+from schedule_management.commands.settings import DEFAULT_TASK_TYPES
 
 
 # =============================================================================
@@ -94,12 +95,7 @@ def add_task(args) -> int:
     except Exception:
         task_types = {}
     if not task_types:
-        task_types = {
-            "1": "read papers",
-            "2": "gym work",
-            "3": "coding",
-            "4": "other"
-        }
+        task_types = dict(DEFAULT_TASK_TYPES)
 
     # Check for missing parameters and handle interactive prompt / TUI
     if task_description is None or priority is None or task_type is None:
@@ -507,12 +503,7 @@ def show_tasks(args) -> int:
     except Exception:
         task_types = {}
     if not task_types:
-        task_types = {
-            "1": "read papers",
-            "2": "gym work",
-            "3": "coding",
-            "4": "other"
-        }
+        task_types = dict(DEFAULT_TASK_TYPES)
 
     sorted_type_ids = sorted(task_types.keys(), key=lambda x: int(x) if x.isdigit() else 999)
     COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan", "white", "bright_blue", "bright_green", "bright_red"]
@@ -561,7 +552,7 @@ def show_tasks(args) -> int:
         prio_visual = f"[{color}]{filled}[dim]{empty}[/dim] ({priority})[/{color}]"
         if is_postponed_future:
             description_text = Text(
-                f"💤 {description}{postpone_suffix}\u2060{task_type_id}",
+                f"💤 {description}{postpone_suffix}",
                 style="italic dim",
             )
         elif description in procrastinate_list:
@@ -572,11 +563,11 @@ def show_tasks(args) -> int:
             # Make overdue tasks (1 or more days overdue) very striking
             is_overdue = age_days is not None and age_days >= 1
             description_text = Text(
-                f"⏳ {description}{_format_procrastination_suffix(age_days)}\u2060{task_type_id}",
+                f"⏳ {description}{_format_procrastination_suffix(age_days)}",
                 style="bold red" if is_overdue else "italic dim",
             )
         else:
-            description_text = Text(f"{description}\u2060{task_type_id}")
+            description_text = Text(f"{description}")
 
         table.add_row(str(i), prio_visual, description_text)
 

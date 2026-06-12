@@ -27,12 +27,14 @@ def test_status_snapshot_returns_daily_panels(monkeypatch):
     assert isinstance(snapshot["tasks"], list)
     assert isinstance(snapshot["deadlines"], list)
     assert isinstance(snapshot["habits"], list)
+    assert isinstance(snapshot["taskTypes"], dict)
+    assert isinstance(snapshot["history"], list)
     if snapshot["schedule"]["events"]:
         event = snapshot["schedule"]["events"][0]
         assert {"time", "label"}.issubset(event)
     if snapshot["tasks"]:
         task = snapshot["tasks"][0]
-        assert {"description", "priority"}.issubset(task)
+        assert {"description", "priority", "type", "typeName"}.issubset(task)
 
 
 def test_task_add_updates_existing_task_and_logs(monkeypatch, tmp_path):
@@ -55,7 +57,7 @@ def test_task_add_updates_existing_task_and_logs(monkeypatch, tmp_path):
     assert result["description"] == "Draft proposal"
     assert result["priority"] == 9
     assert json.loads(tasks_path.read_text(encoding="utf-8")) == [
-        {"description": "Draft proposal", "priority": 9}
+        {"description": "Draft proposal", "priority": 9, "type": "1"}
     ]
     log = json.loads(task_log_path.read_text(encoding="utf-8"))
     assert log[-1]["action"] == "updated"

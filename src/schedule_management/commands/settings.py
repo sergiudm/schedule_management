@@ -40,6 +40,7 @@ SECTION_LABELS: dict[str, str] = {
     "tasks": "📋  Task Scheduling",
     "paths": "📁  File Paths",
     "desktop_widget": "🖥️  Desktop Widget",
+    "task_types": "🏷️  Task Types",
 }
 
 _TIME_RE = re.compile(r"^(\d{1,2}):(\d{2})$")
@@ -115,6 +116,14 @@ SECTION_FALLBACKS: dict[str, FieldMeta] = {
     "time_blocks": FieldMeta(EditorType.NUMBER, "Duration in minutes", min_val=1, max_val=480),
     "time_points": FieldMeta(EditorType.TEXT, "Notification message"),
     "paths": FieldMeta(EditorType.TEXT, "File or directory path"),
+    "task_types": FieldMeta(EditorType.TEXT, "Task type name"),
+}
+
+DEFAULT_TASK_TYPES: dict[str, str] = {
+    "1": "read papers",
+    "2": "gym work",
+    "3": "coding",
+    "4": "other",
 }
 
 
@@ -157,6 +166,8 @@ class SettingsModel:
 
     def load(self) -> None:
         self.data = load_toml_raw(self.path)
+        if "task_types" not in self.data:
+            self.data["task_types"] = dict(DEFAULT_TASK_TYPES)
         self.dirty = False
 
     def save(self) -> None:
@@ -665,7 +676,17 @@ class SettingsTUI:
         elif key == "a":
             row = self._current_row()
             self._add_section = row.section if row.key else self.browse_section
-            self.edit_buffer = ""
+            if self._add_section == "task_types":
+                existing = self.model.keys_in("task_types")
+                max_num = 0
+                for k in existing:
+                    try:
+                        max_num = max(max_num, int(k))
+                    except ValueError:
+                        pass
+                self.edit_buffer = str(max_num + 1)
+            else:
+                self.edit_buffer = ""
             self.mode = _Mode.ADD_KEY
         return None
 
@@ -790,6 +811,9 @@ class SettingsTUI:
 
         # Normal field
         meta = _get_meta(row.section, row.key or "")
+        if row.section == "task_types" and not raw:
+            self.message = "Task type name cannot be empty"
+            return None
         validated = self._validate(meta, raw)
         if validated is None:
             return None
@@ -837,8 +861,11 @@ class SettingsTUI:
                 if r.section == self._add_section and r.key == name:
                     self.cursor = i
                     break
-            self.mode = _Mode.BROWSE
-            self.message = f"Added {name} — press Enter to set its value"
+            if self._add_section == "task_types":
+                self._start_edit()
+            else:
+                self.mode = _Mode.BROWSE
+                self.message = f"Added {name} — press Enter to set its value"
             return None
         elif key == "\x1b":
             self.mode = _Mode.BROWSE

@@ -19,9 +19,12 @@ from schedule_management.gui.services import (
     deadline_delete,
     deadline_update,
     habit_mark,
+    settings_get_task_types,
+    settings_set_task_types,
     status_snapshot,
     task_add,
     task_delete,
+    task_history,
     task_update,
 )
 
@@ -32,10 +35,13 @@ COMMANDS: dict[str, BridgeHandler] = {
     "task_add": task_add,
     "task_update": task_update,
     "task_delete": task_delete,
+    "task_history": task_history,
     "deadline_add": deadline_add,
     "deadline_update": deadline_update,
     "deadline_delete": deadline_delete,
     "habit_mark": habit_mark,
+    "settings_get_task_types": settings_get_task_types,
+    "settings_set_task_types": settings_set_task_types,
     "sync_generate": lambda payload: generate_sync_proposal(
         _coerce_feedback(payload.get("feedback", []))
     ),

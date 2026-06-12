@@ -38,13 +38,38 @@ const snapshot: Snapshot = {
     ],
     hasSyncedOverlay: true
   },
-  tasks: [{ description: "Draft proposal", priority: 9 }],
+  tasks: [
+    {
+      description: "Draft proposal",
+      priority: 9,
+      type: "1",
+      typeName: "read papers",
+      alarmFrom: null,
+      procrastinated: false,
+      procrastinateDays: null
+    }
+  ],
   deadlines: [
     { event: "Submit paper", deadline: "2026-05-10", daysLeft: 12, status: "ok" }
   ],
   habits: [
     { id: "1", description: "Read", completed: false },
     { id: "2", description: "Stretch", completed: true }
+  ],
+  taskTypes: {
+    "1": "read papers",
+    "2": "gym work",
+    "3": "coding",
+    "4": "other"
+  },
+  history: [
+    {
+      description: "Old task",
+      priority: 5,
+      startedAt: "2026-04-27T09:00:00",
+      endedAt: "2026-04-27T11:30:00",
+      duration: "2h 30m"
+    }
   ]
 };
 
@@ -87,11 +112,16 @@ describe("renderApp", () => {
     expect(root.textContent).toContain("Submit paper");
     expect(root.textContent).toContain("Read");
     expect(root.textContent).toContain("Stretch");
+    expect(root.textContent).toContain("read papers");
+    expect(root.textContent).toContain("Old task");
+    expect(root.textContent).toContain("2h 30m");
     expect(root.querySelector(".grid")).not.toBeNull();
     expect(root.querySelector(".now-panel")).not.toBeNull();
     expect(root.querySelector(".timeline-panel")).not.toBeNull();
     expect(root.querySelector(".queue-panel")).not.toBeNull();
     expect(root.querySelector(".quick-panel")).not.toBeNull();
+    expect(root.querySelector(".history-panel")).not.toBeNull();
+    expect(root.querySelector(".type-badge")).not.toBeNull();
   });
 
   it("sends task add command and refreshes", async () => {
@@ -120,6 +150,7 @@ describe("renderApp", () => {
 
     expect(client.send).toHaveBeenCalledWith("task_add", {
       description: "Review PR",
+      type: "1",
       priority: 8
     });
   });

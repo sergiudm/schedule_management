@@ -2388,7 +2388,9 @@ class TestSettingsCommand:
         )
 
         model = SettingsModel(settings_file)
-        assert model.sections() == ["settings", "paths"]
+        assert "settings" in model.sections()
+        assert "paths" in model.sections()
+        assert "task_types" in model.sections()
         assert model.keys_in("settings") == ["a", "b"]
         assert model.keys_in("paths") == ["c"]
         assert model.keys_in("nonexistent") == []
@@ -2463,10 +2465,13 @@ class TestSettingsCommand:
         # Level 0: sections view — rows is empty (sections rendered separately)
         assert tui.browse_level == 0
         assert len(tui.rows) == 0
-        assert tui._sections_list() == ["settings", "paths"]
+        sections = tui._sections_list()
+        assert "settings" in sections
+        assert "paths" in sections
+        assert "task_types" in sections
 
         # Drill into "settings" section
-        tui.section_cursor = 0
+        tui.section_cursor = sections.index("settings")
         tui._drill_into_section()
         assert tui.browse_level == 1
         assert tui.browse_section == "settings"
@@ -2478,11 +2483,11 @@ class TestSettingsCommand:
         # Go back to sections
         tui._go_back_to_sections()
         assert tui.browse_level == 0
-        assert tui.section_cursor == 0
+        assert tui.section_cursor == sections.index("settings")
         assert len(tui.rows) == 0
 
         # Drill into "paths" section
-        tui.section_cursor = 1
+        tui.section_cursor = sections.index("paths")
         tui._drill_into_section()
         assert tui.browse_level == 1
         assert tui.browse_section == "paths"
@@ -2579,6 +2584,135 @@ class TestSettingsCommand:
         tui.mode = _Mode.PICKER
         tui._handle_key(readchar.key.BACKSPACE)
         assert tui.mode == _Mode.BROWSE
+
+    def test_settings_model_task_types_auto_populated(self, tmp_path):
+        """Test that task_types section is auto-populated with defaults when missing."""
+        from schedule_management.commands.settings import SettingsModel, DEFAULT_TASK_TYPES
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            "[settings]\nalarm_interval = 5\n", encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        assert "task_types" in model.sections()
+        assert model.get("task_types", "1") == "read papers"
+        assert model.get("task_types", "2") == "gym work"
+        assert model.get("task_types", "3") == "coding"
+        assert model.get("task_types", "4") == "other"
+        assert model.dirty is False
+
+    def test_settings_model_task_types_preserved_when_present(self, tmp_path):
+        """Test that existing task_types section is preserved."""
+        from schedule_management.commands.settings import SettingsModel
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            '[settings]\na = 1\n\n[task_types]\n1 = "custom type"\n',
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        assert model.get("task_types", "1") == "custom type"
+        assert model.get("task_types", "2") is None
+
+    def test_settings_tui_task_types_row_building(self, tmp_path):
+        """Test TUI builds correct rows for task_types section."""
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            "[settings]\na = 1\n\n[task_types]\n1 = \"read papers\"\n2 = \"coding\"\n",
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        tui = SettingsTUI(model)
+
+        # Drill into task_types section
+        sections = tui._sections_list()
+        assert "task_types" in sections
+        tui.section_cursor = sections.index("task_types")
+        tui._drill_into_section()
+        assert tui.browse_level == 1
+        assert tui.browse_section == "task_types"
+        assert len(tui.rows) == 2
+        assert tui.rows[0].key == "1"
+        assert tui.rows[1].key == "2"
+
+    def test_settings_tui_task_types_add_prefill(self, tmp_path):
+        """Test that adding a task type pre-fills the next available number."""
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI, _Mode
+        import readchar
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            '[task_types]\n1 = "read papers"\n3 = "coding"\n',
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        tui = SettingsTUI(model)
+
+        # Drill into task_types section
+        tui.section_cursor = tui._sections_list().index("task_types")
+        tui._drill_into_section()
+
+        # Press 'a' to add
+        tui._handle_key("a")
+        assert tui.mode == _Mode.ADD_KEY
+        assert tui.edit_buffer == "4"
+
+    def test_settings_tui_task_types_add_auto_edit(self, tmp_path):
+        """Test that adding a task type auto-transitions to inline editing."""
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI, _Mode
+        import readchar
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            '[task_types]\n1 = "read papers"\n',
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        tui = SettingsTUI(model)
+
+        # Drill into task_types section
+        tui.section_cursor = tui._sections_list().index("task_types")
+        tui._drill_into_section()
+
+        # Press 'a' to add, then Enter to confirm key name
+        tui._handle_key("a")
+        assert tui.edit_buffer == "2"
+        tui._handle_key(readchar.key.ENTER)
+
+        # Should auto-transition to INLINE mode to edit the value
+        assert tui.mode == _Mode.INLINE
+        assert tui.editing_row.key == "2"
+
+    def test_settings_tui_task_types_empty_name_validation(self, tmp_path):
+        """Test that empty task type names are rejected."""
+        from schedule_management.commands.settings import SettingsModel, SettingsTUI, _Mode, Row
+        import readchar
+
+        settings_file = tmp_path / "settings.toml"
+        settings_file.write_text(
+            '[task_types]\n1 = "read papers"\n',
+            encoding="utf-8",
+        )
+
+        model = SettingsModel(settings_file)
+        tui = SettingsTUI(model)
+
+        # Set up inline editing for a task type with empty buffer
+        tui.editing_row = Row("task_types", "1")
+        tui.mode = _Mode.INLINE
+        tui.edit_buffer = ""
+
+        # Try to confirm empty name
+        tui._handle_key(readchar.key.ENTER)
+        assert tui.mode == _Mode.INLINE
+        assert "cannot be empty" in tui.message
 
 
 

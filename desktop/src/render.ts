@@ -1,6 +1,7 @@
 import {
   CalendarPlus,
   Check,
+  History,
   Plus,
   RefreshCw,
   Trash2,
@@ -17,10 +18,12 @@ const trashIcon = renderIcon(Trash2, { width: 16, height: 16 });
 const calendarIcon = renderIcon(CalendarPlus, { width: 16, height: 16 });
 const checkIcon = renderIcon(Check, { width: 16, height: 16 });
 const sparkIcon = renderIcon(WandSparkles, { width: 16, height: 16 });
+const historyIcon = renderIcon(History, { width: 16, height: 16 });
 
 type AppState = {
   syncProposal: SyncProposal | null;
   syncFeedback: string[];
+  typeEditorOpen: boolean;
 };
 
 export async function renderApp(
@@ -30,6 +33,7 @@ export async function renderApp(
   const state: AppState = {
     syncProposal: null,
     syncFeedback: [],
+    typeEditorOpen: false,
   };
   root.innerHTML = `<section class="shell"><p class="muted">Loading...</p></section>`;
 
@@ -79,7 +83,8 @@ function renderSnapshot(
         ${renderNowNext(snapshot)}
         ${renderTimeline(snapshot)}
         ${renderQueue(snapshot)}
-        ${renderQuickAdd(state)}
+        ${renderQuickAdd(snapshot, state)}
+        ${renderHistory(snapshot)}
       </section>
     </section>
   `;
@@ -137,6 +142,19 @@ function renderSnapshot(
     ?.addEventListener("click", () => {
       runAction(root, () => acceptSync(client, reload, state));
     });
+
+  root
+    .querySelector<HTMLButtonElement>("[data-testid='type-editor-toggle']")
+    ?.addEventListener("click", () => {
+      state.typeEditorOpen = !state.typeEditorOpen;
+      renderSnapshot(root, client, snapshot, reload, state);
+    });
+
+  root
+    .querySelector<HTMLButtonElement>("[data-testid='type-editor-save']")
+    ?.addEventListener("click", () => {
+      runAction(root, () => saveTaskTypes(root, client, reload));
+    });
 }
 
 function renderNowNext(snapshot: Snapshot): string {
@@ -184,16 +202,42 @@ function renderTimeline(snapshot: Snapshot): string {
 
 function renderQueue(snapshot: Snapshot): string {
   const tasks = snapshot.tasks
-    .slice(0, 6)
-    .map(
-      (task) => `
-        <li class="queue-row">
-          <span>${escapeHtml(task.description)}</span>
+    .slice(0, 8)
+    .map((task) => {
+      const rowClass = task.alarmFrom
+        ? "queue-row postponed"
+        : task.procrastinated
+          ? "queue-row procrastinated"
+          : "queue-row";
+
+      let label = escapeHtml(task.description);
+      if (task.alarmFrom) {
+        const today = new Date(snapshot.today.date);
+        const alarmDate = new Date(task.alarmFrom);
+        const daysLeft = Math.round(
+          (alarmDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        const suffix = daysLeft <= 1 ? " (coming tomorrow)" : ` (coming in ${daysLeft} days)`;
+        label = `\u{1F4A4} ${label}${escapeHtml(suffix)}`;
+      } else if (task.procrastinated) {
+        const age = task.procrastinateDays;
+        const suffix = age === null ? "" : age === 0 ? " (deferred today)" : age === 1 ? " (1 day overdue)" : ` (${age} days overdue)`;
+        label = `\u23F3 ${label}${escapeHtml(suffix)}`;
+      }
+
+      const typeBadge = task.typeName
+        ? `<span class="type-badge">${escapeHtml(task.typeName)}</span>`
+        : "";
+
+      return `
+        <li class="${rowClass}">
+          <span>${label}</span>
+          ${typeBadge}
           <strong>${task.priority}</strong>
           <button class="icon-button subtle" type="button" data-testid="task-delete" data-description="${escapeHtml(task.description)}" aria-label="Delete task ${escapeHtml(task.description)}" title="Delete task">${trashIcon}</button>
         </li>
-      `
-    )
+      `;
+    })
     .join("");
   const deadlines = snapshot.deadlines
     .slice(0, 4)
@@ -231,12 +275,47 @@ function renderQueue(snapshot: Snapshot): string {
   `;
 }
 
-function renderQuickAdd(state: AppState): string {
+function renderQuickAdd(snapshot: Snapshot, state: AppState): string {
+  const typeOptions = Object.entries(snapshot.taskTypes)
+    .sort(([a], [b]) => {
+      const na = Number.parseInt(a, 10);
+      const nb = Number.parseInt(b, 10);
+      if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+      return a.localeCompare(b);
+    })
+    .map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`)
+    .join("");
+
+  const typeEditor = state.typeEditorOpen
+    ? `
+      <div class="type-editor" data-testid="type-editor">
+        ${Object.entries(snapshot.taskTypes)
+          .sort(([a], [b]) => {
+            const na = Number.parseInt(a, 10);
+            const nb = Number.parseInt(b, 10);
+            if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+            return a.localeCompare(b);
+          })
+          .map(
+            ([id, name]) => `
+              <div class="type-row">
+                <input data-testid="type-key" type="text" value="${escapeHtml(id)}" readonly />
+                <input data-testid="type-name" type="text" value="${escapeHtml(name)}" data-type-key="${escapeHtml(id)}" />
+              </div>
+            `
+          )
+          .join("")}
+        <button data-testid="type-editor-save" class="secondary-button" type="button">Save Types</button>
+      </div>
+    `
+    : "";
+
   return `
     <article class="panel quick-panel">
       <p class="eyebrow">Quick Add</p>
       <div class="form-row">
         <input data-testid="task-description" type="text" autocomplete="off" placeholder="New task" />
+        <select data-testid="task-type" aria-label="Task type">${typeOptions}</select>
         <input data-testid="task-priority" type="number" min="1" max="10" value="5" aria-label="Task priority" />
         <button data-testid="task-add" class="primary-button" type="button">${plusIcon}<span>Add</span></button>
       </div>
@@ -256,6 +335,10 @@ function renderQuickAdd(state: AppState): string {
           }
         </div>
         ${state.syncProposal ? renderSyncProposal(state.syncProposal) : ""}
+      </div>
+      <div class="type-editor-section">
+        <button data-testid="type-editor-toggle" class="secondary-button type-toggle" type="button">${state.typeEditorOpen ? "Hide" : "Edit"} Task Types</button>
+        ${typeEditor}
       </div>
     </article>
   `;
@@ -292,10 +375,12 @@ async function addTask(
     root
       .querySelector<HTMLInputElement>("[data-testid='task-description']")
       ?.value.trim() ?? "";
+  const type =
+    root.querySelector<HTMLSelectElement>("[data-testid='task-type']")?.value ?? "1";
   const priorityValue =
     root.querySelector<HTMLInputElement>("[data-testid='task-priority']")?.value ?? "5";
   const priority = Number.parseInt(priorityValue, 10);
-  await client.send("task_add", { description, priority });
+  await client.send("task_add", { description, type, priority });
   await reload();
 }
 
@@ -375,6 +460,52 @@ async function acceptSync(
   state.syncProposal = null;
   state.syncFeedback = [];
   await reload();
+}
+
+async function saveTaskTypes(
+  root: HTMLElement,
+  client: BridgeClient,
+  reload: () => Promise<void>
+): Promise<void> {
+  const rows = root.querySelectorAll<HTMLDivElement>(".type-row");
+  const taskTypes: Record<string, string> = {};
+  rows.forEach((row) => {
+    const keyInput = row.querySelector<HTMLInputElement>("[data-testid='type-key']");
+    const nameInput = row.querySelector<HTMLInputElement>("[data-testid='type-name']");
+    if (keyInput && nameInput) {
+      const key = keyInput.value.trim();
+      const name = nameInput.value.trim();
+      if (key && name) {
+        taskTypes[key] = name;
+      }
+    }
+  });
+  await client.send("settings_set_task_types", { taskTypes });
+  await reload();
+}
+
+function renderHistory(snapshot: Snapshot): string {
+  if (!snapshot.history.length) {
+    return "";
+  }
+  const rows = snapshot.history
+    .map(
+      (item) => `
+        <li class="history-row">
+          <span>${escapeHtml(item.description)}</span>
+          <strong>${item.priority}</strong>
+          <time>${escapeHtml(item.duration)}</time>
+        </li>
+      `
+    )
+    .join("");
+
+  return `
+    <article class="panel history-panel">
+      <p class="eyebrow">${historyIcon} Recent Activity</p>
+      <ul class="history-list">${rows}</ul>
+    </article>
+  `;
 }
 
 function escapeHtml(value: string): string {
