@@ -27,33 +27,30 @@ We provide an automated installer for convenience, but manual installation is fu
 The `install.sh` script handles dependency installation, configuration scaffolding, and service registration in one go.
 It installs `rmd` as the primary CLI and keeps `reminder` as a compatibility alias.
 
-1.  **Clone the repository**:
+1.  **Run the installer**:
+    You can run the installation script directly using `curl`:
     ```bash
-    git clone https://github.com/sergiudm/schedule-everything.git
-    cd schedule-everything
+    curl -fsSL https://raw.githubusercontent.com/sergiudm/schedule-everything/main/install.sh | bash
     ```
 
-2.  **Run the installer**:
+    Alternatively, if you have cloned the repository locally:
     ```bash
     ./install.sh
     ```
 
     The script will:
+    *   Automatically download or clone the repository (in temp space) if run via `curl`.
     *   Install the Python package and dependencies.
-    *   Create the `~/schedule_management` directory structure.
-    *   Ensure required config files exist.
+    *   Create the `~/SCHEDULE_MANAGEMENT` directory structure.
+    *   Ensure required config files exist and scaffold config layout.
     *   Prompt for missing required config values one by one.
-    *   Register the background service (on macOS).
+    *   Interactively prompt to install the OpenCode CLI (if the submodule installer is present).
+    *   Register the background service (on macOS and Linux).
 
-3.  **Install OpenCode CLI**:
-    ```bash
-    ./third_party/opencode/install --no-modify-path
-    ```
-
-4.  **Finalize Setup**:
+2.  **Finalize Setup**:
     Follow the on-screen instructions to load the service. Typically, this involves:
     ```bash
-    launchctl load ~/Library/LaunchAgents/com.sergiudm.schedule_management.plist
+    launchctl load ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
     ```
 
 ### Method 2: Manual Installation
@@ -62,8 +59,8 @@ For advanced users or those integrating into existing environments.
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/sergiudm/schedule_management.git
-    cd schedule_management
+    git clone https://github.com/sergiudm/schedule-everything.git
+    cd schedule-everything
     ```
 
 2.  **Install the Package**:
@@ -80,24 +77,24 @@ For advanced users or those integrating into existing environments.
 
 4.  **Create Configuration Directory**:
     ```bash
-    mkdir -p ~/schedule_management/config/user_config_0
+    mkdir -p ~/SCHEDULE_MANAGEMENT/config/user_config_0
     ```
 
 5.  **Initialize Config Files**:
     Copy the templates into the first versioned config set:
     ```bash
-    cp config/settings_template.toml ~/schedule_management/config/user_config_0/settings.toml
-    cp config/week_schedule_template.toml ~/schedule_management/config/user_config_0/odd_weeks.toml
-    cp config/week_schedule_template.toml ~/schedule_management/config/user_config_0/even_weeks.toml
+    cp config/settings_template.toml ~/SCHEDULE_MANAGEMENT/config/user_config_0/settings.toml
+    cp config/week_schedule_template.toml ~/SCHEDULE_MANAGEMENT/config/user_config_0/odd_weeks.toml
+    cp config/week_schedule_template.toml ~/SCHEDULE_MANAGEMENT/config/user_config_0/even_weeks.toml
     ```
 
 6.  **Configure Shell Environment**:
     Add the following to your shell profile (`~/.zshrc`, `~/.bash_profile`, etc.) to access the `rmd` CLI:
 
     ```bash
-    export PATH="$HOME/schedule_management:$PATH"
-    export REMINDER_CONFIG_DIR="$HOME/schedule_management/config"
-    alias rmd="$HOME/schedule_management/rmd"
+    export PATH="$HOME/SCHEDULE_MANAGEMENT:$PATH"
+    export REMINDER_CONFIG_DIR="$HOME/SCHEDULE_MANAGEMENT/config"
+    alias rmd="$HOME/SCHEDULE_MANAGEMENT/rmd"
     ```
 
 7.  **Apply Changes**:
@@ -169,12 +166,12 @@ To completely remove the application:
 
 1.  **Unload the Service**:
     ```bash
-    launchctl unload ~/Library/LaunchAgents/com.sergiudm.schedule_management.plist
+    launchctl unload ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
     ```
 
 2.  **Remove Configuration & Data**:
     ```bash
-    rm -rf "$HOME/schedule_management"
+    rm -rf "$HOME/SCHEDULE_MANAGEMENT"
     ```
 
 3.  **Remove Python Package**:

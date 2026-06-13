@@ -5,6 +5,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="https://github.com/sergiudm/schedule-everything"
+TEMP_DIR=""
 
 # Colors for output
 RED='\033[0;31m'
@@ -268,25 +270,31 @@ setup_project() {
 
     if [[ -d "$INSTALL_DIR" ]]; then
         log_warning "Installation directory exists at $INSTALL_DIR"
-        while true; do
-            read -r -p "Replace existing installation with new files? [y/N]: " replace_existing
-            case "$replace_existing" in
-                [yY]|[yY][eE][sS])
-                    log_info "Replacing existing installation directory..."
-                    rm -rf "$INSTALL_DIR"
-                    break
-                    ;;
-                [nN]|[nN][oO]|"")
-                    backup_path="${INSTALL_DIR}.backup.$(date +%Y%m%d_%H%M%S)"
-                    log_info "Backing up existing installation to $backup_path"
-                    mv "$INSTALL_DIR" "$backup_path"
-                    break
-                    ;;
-                *)
-                    log_warning "Invalid input. Please answer with y or n."
-                    ;;
-            esac
-        done
+        if [[ "$AUTO_YES" == "true" ]]; then
+            backup_path="${INSTALL_DIR}.backup.$(date +%Y%m%d_%H%M%S)"
+            log_info "Backing up existing installation to $backup_path (non-interactive)"
+            mv "$INSTALL_DIR" "$backup_path"
+        else
+            while true; do
+                read -r -p "Replace existing installation with new files? [y/N]: " replace_existing
+                case "$replace_existing" in
+                    [yY]|[yY][eE][sS])
+                        log_info "Replacing existing installation directory..."
+                        rm -rf "$INSTALL_DIR"
+                        break
+                        ;;
+                    [nN]|[nN][oO]|"")
+                        backup_path="${INSTALL_DIR}.backup.$(date +%Y%m%d_%H%M%S)"
+                        log_info "Backing up existing installation to $backup_path"
+                        mv "$INSTALL_DIR" "$backup_path"
+                        break
+                        ;;
+                    *)
+                        log_warning "Invalid input. Please answer with y or n."
+                        ;;
+                esac
+            done
+        fi
     fi
 
     mkdir -p "$INSTALL_DIR"
@@ -297,6 +305,11 @@ setup_project() {
     else
         log_error "src/ directory not found in current working directory!"
         exit 1
+    fi
+
+    if [[ -d "third_party" ]]; then
+        cp -r third_party "$INSTALL_DIR/"
+        log_success "third_party/ directory copied"
     fi
 
     # Copy build metadata files needed by editable installs.
@@ -373,7 +386,7 @@ configure_configs() {
     log_info "Checking configuration files and required values..."
 
     local wizard_script="$INSTALL_DIR/src/schedule_management/install_config_wizard.py"
-    local template_dir="$SCRIPT_DIR/config"
+    local template_dir="$SCRIPT_DIR/config/user_config_0"
     local target_config_dir
     target_config_dir="$(resolve_install_target_config_dir)"
 
@@ -382,14 +395,21 @@ configure_configs() {
         exit 1
     fi
 
+    local extra_args=()
+    if [[ "$AUTO_YES" == "true" ]]; then
+        extra_args+=("--yes")
+    fi
+
     if [[ -d "$template_dir" ]]; then
         "$INSTALL_DIR/.venv/bin/python" "$wizard_script" \
             --config-dir "$target_config_dir" \
-            --template-dir "$template_dir"
+            --template-dir "$template_dir" \
+            "${extra_args[@]:-}"
     else
         log_warning "Template directory not found at $template_dir; using config directory as template source."
         "$INSTALL_DIR/.venv/bin/python" "$wizard_script" \
-            --config-dir "$target_config_dir"
+            --config-dir "$target_config_dir" \
+            "${extra_args[@]:-}"
     fi
 
     log_info "Validated active config directory: $target_config_dir"
@@ -594,6 +614,11 @@ install_desktop_widget() {
         return 0
     fi
 
+    if [[ "$AUTO_YES" == "true" ]]; then
+        log_info "Skipping desktop widget installation in non-interactive mode"
+        return 0
+    fi
+
     while true; do
         read -r -p "Install desktop widget to show tasks on your desktop? (requires Übersicht) [Y/n]: " install_widget
         case "$install_widget" in
@@ -678,6 +703,38 @@ setup_autocompletion() {
     fi
 }
 
+# Install OpenCode CLI if submodule exists
+install_opencode() {
+    if [[ -f "third_party/opencode/install" ]]; then
+        if ! command -v opencode &> /dev/null; then
+            if [[ "$AUTO_YES" == "true" ]]; then
+                log_info "Skipping OpenCode CLI installation in non-interactive mode."
+                return 0
+            fi
+            echo
+            while true; do
+                read -r -p "Install OpenCode CLI? (required for AI-assisted commands) [Y/n]: " install_oc
+                case "$install_oc" in
+                    [yY]|[yY][eE][sS]|"")
+                        log_info "Installing OpenCode CLI..."
+                        chmod +x third_party/opencode/install
+                        ./third_party/opencode/install --no-modify-path
+                        log_success "OpenCode CLI installed to \$HOME/.opencode/bin/opencode"
+                        break
+                        ;;
+                    [nN]|[nN][oO])
+                        log_info "Skipping OpenCode CLI installation"
+                        break
+                        ;;
+                    *)
+                        log_warning "Invalid input. Please answer with y or n."
+                        ;;
+                esac
+            done
+        fi
+    fi
+}
+
 # Display usage (platform-specific)
 display_usage() {
     log_info "Installation completed successfully!"
@@ -694,6 +751,13 @@ display_usage() {
     echo "  $INSTALL_DIR/start_reminders.sh"
     echo "  $INSTALL_DIR/stop_reminders.sh"
     echo
+    if ! command -v opencode &> /dev/null; then
+        echo "OpenCode CLI installation (required for AI-assisted commands):"
+        echo "  $INSTALL_DIR/third_party/opencode/install --no-modify-path"
+        echo "  To use it, add its path to your environment or run:"
+        echo "    export REMINDER_OPENCODE_BIN=\$HOME/.opencode/bin/opencode"
+        echo
+    fi
     if [[ "$OS_TYPE" == "macos" ]]; then
         echo "LaunchAgent:"
         echo "  launchctl load $LAUNCH_AGENT_PLIST   # Enable auto-start"
@@ -721,12 +785,41 @@ cleanup() {
     if [[ -n "${VIRTUAL_ENV:-}" ]]; then
         deactivate 2>/dev/null || true
     fi
+    if [[ -n "${TEMP_DIR:-}" && -d "${TEMP_DIR}" ]]; then
+        rm -rf "${TEMP_DIR}"
+    fi
 }
 
 # Main
 main() {
     echo "=== $SCRIPT_NAME ==="
     trap cleanup EXIT
+
+    # If not running from within the repository (src/ is missing), download the repo
+    if [[ ! -d "src" ]]; then
+        log_info "Source code not found in current directory. Downloading repository..."
+        TEMP_DIR=$(mktemp -d -t schedule-installer-XXXXXX)
+        
+        # Prefer git clone with recursive submodules to get everything cleanly
+        if command -v git &>/dev/null; then
+            log_info "Cloning repository recursively..."
+            git clone --recursive --depth 1 "${REPO_URL}.git" "${TEMP_DIR}"
+        elif command -v curl &>/dev/null && command -v tar &>/dev/null; then
+            log_info "Downloading repository tarball..."
+            curl -sSL "${REPO_URL}/archive/refs/heads/main.tar.gz" | tar -xz -C "${TEMP_DIR}" --strip-components=1
+            
+            # Fetch opencode submodule
+            log_info "Downloading opencode submodule..."
+            mkdir -p "${TEMP_DIR}/third_party/opencode"
+            curl -sSL "https://github.com/anomalyco/opencode/archive/refs/heads/main.tar.gz" | tar -xz -C "${TEMP_DIR}/third_party/opencode" --strip-components=1 || true
+        else
+            log_error "Required tools missing. Please install curl/tar or git."
+            exit 1
+        fi
+        
+        cd "${TEMP_DIR}"
+        SCRIPT_DIR="${TEMP_DIR}"
+    fi
 
     check_os
     
@@ -741,6 +834,7 @@ main() {
     create_venv
     configure_configs
     install_dependencies
+    install_opencode
     
     if [[ "$OS_TYPE" == "macos" ]]; then
         create_launch_agent
@@ -759,11 +853,16 @@ main() {
 }
 
 # Parse args (minimal)
+AUTO_YES="false"
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
-            echo "Usage: $0"
+            echo "Usage: $0 [-y|--yes]"
             exit 0
+            ;;
+        -y|--yes)
+            AUTO_YES="true"
+            shift
             ;;
         *)
             log_error "Unknown option: $1"
@@ -771,5 +870,10 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Redirect stdin to controlling terminal if piped, unless running in non-interactive mode
+if [[ "$AUTO_YES" == "false" ]] && [[ ! -t 0 ]] && [[ -c /dev/tty ]]; then
+    exec < /dev/tty
+fi
 
 main

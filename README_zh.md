@@ -49,6 +49,12 @@
 
 ### 1. 安装
 
+使用 curl（推荐）：
+```bash
+curl -fsSL https://raw.githubusercontent.com/sergiudm/schedule-everything/main/install.sh | bash
+```
+
+或者从本地克隆安装：
 ```bash
 git clone --recurse-submodules https://github.com/sergiudm/schedule-everything.git
 cd schedule-everything

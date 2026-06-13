@@ -30,6 +30,12 @@ work.
 
 ### 1. Install
 
+Using curl (recommended):
+```bash
+curl -fsSL https://raw.githubusercontent.com/sergiudm/schedule-everything/main/install.sh | bash
+```
+
+Or from a local clone:
 ```bash
 git clone --recurse-submodules https://github.com/sergiudm/schedule-everything.git
 cd schedule-everything
@@ -37,7 +43,7 @@ cd schedule-everything
 ./third_party/opencode/install --no-modify-path
 ```
 
-`./install.sh` sets up the local environment and config scaffold. OpenCode is
+`install.sh` sets up the local environment, copies files, scaffolds the configuration, and registers background services. OpenCode is
 required for AI-assisted commands such as `rmd setup` and `rmd sync`.
 
 ### 2. Build Your Schedule with One Command!
