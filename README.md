@@ -4,12 +4,12 @@
   <img src="assets/logo.png" alt="Schedule Everything logo" width="520">
 </p>
 
-[![Logic Tests](https://github.com/sergiudm/schedule-everything/actions/workflows/logic-tests.yml/badge.svg)](https://github.com/sergiudm/schedule-everything/actions/workflows/logic-tests.yml)
-[![CLI Tests](https://github.com/sergiudm/schedule-everything/actions/workflows/cli-tests.yml/badge.svg)](https://github.com/sergiudm/schedule-everything/actions/workflows/cli-tests.yml)
+[![Logic Tests](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/logic-tests.yml/badge.svg)](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/logic-tests.yml)
+[![CLI Tests](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/cli-tests.yml/badge.svg)](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/cli-tests.yml)
 [![PyPI version](https://badge.fury.io/py/schedule-management.svg)](https://pypi.org/project/schedule-management)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://sergiudm.github.io/schedule-everything/)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sergiudm/schedule-everything)
+[![Documentation](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://PhDeasy-org.github.io/schedule-everything/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PhDeasy-org/schedule-everything)
 [中文版本](README_zh.md)
 
 Schedule Everything is a local-first, AI-assisted scheduling CLI for building a
@@ -32,12 +32,12 @@ work.
 
 Using curl (recommended):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sergiudm/schedule-everything/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PhDeasy-org/schedule-everything/main/install.sh | bash
 ```
 
 Or from a local clone:
 ```bash
-git clone --recurse-submodules https://github.com/sergiudm/schedule-everything.git
+git clone --recurse-submodules https://github.com/PhDeasy-org/schedule-everything.git
 cd schedule-everything
 ./install.sh
 ./third_party/opencode/install --no-modify-path
@@ -143,11 +143,11 @@ the macOS bundles under `src-tauri/target/release/bundle/`.
 
 The low-level manual configuration flow has been moved to the docs.
 
-- [Introduction](https://sergiudm.github.io/schedule-everything/docs/intro)
-- [Quick Start](https://sergiudm.github.io/schedule-everything/docs/quick-start)
-- [Installation](https://sergiudm.github.io/schedule-everything/docs/installation)
-- [Configuration Overview](https://sergiudm.github.io/schedule-everything/docs/configuration/overview)
-- [CLI Overview](https://sergiudm.github.io/schedule-everything/docs/cli/overview)
+- [Introduction](https://PhDeasy-org.github.io/schedule-everything/docs/intro)
+- [Quick Start](https://PhDeasy-org.github.io/schedule-everything/docs/quick-start)
+- [Installation](https://PhDeasy-org.github.io/schedule-everything/docs/installation)
+- [Configuration Overview](https://PhDeasy-org.github.io/schedule-everything/docs/configuration/overview)
+- [CLI Overview](https://PhDeasy-org.github.io/schedule-everything/docs/cli/overview)
 
 ## License
 

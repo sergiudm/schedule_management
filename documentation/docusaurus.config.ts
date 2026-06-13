@@ -16,14 +16,14 @@ const config: Config = {
   },
 
   // Set the production url of your site here
-  url: 'https://sergiudm.github.io',
+  url: 'https://PhDeasy-org.github.io',
   // Set the /<baseUrl>/ pathname under which your site is served
   // For GitHub pages deployment, it is often '/<projectName>/'
   baseUrl: '/schedule-everything/',
 
   // GitHub pages deployment config.
   // If you aren't using GitHub pages, you don't need these.
-  organizationName: 'sergiudm', // Usually your GitHub org/user name.
+  organizationName: 'PhDeasy-org', // Usually your GitHub org/user name.
   projectName: 'schedule-everything', // Usually your repo name.
 
   onBrokenLinks: 'throw',
@@ -55,7 +55,7 @@ const config: Config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/sergiudm/schedule-everything/tree/main/documentation/',
+            'https://github.com/PhDeasy-org/schedule-everything/tree/main/documentation/',
         },
         blog: {
           showReadingTime: true,
@@ -66,7 +66,7 @@ const config: Config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/sergiudm/schedule-everything/tree/main/documentation/',
+            'https://github.com/PhDeasy-org/schedule-everything/tree/main/documentation/',
           // Useful options to enforce blogging best practices
           onInlineTags: 'warn',
           onInlineAuthors: 'warn',
@@ -103,7 +103,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://github.com/sergiudm/schedule-everything',
+          href: 'https://github.com/PhDeasy-org/schedule-everything',
           label: 'GitHub',
           position: 'right',
         },
@@ -134,11 +134,11 @@ const config: Config = {
           items: [
             {
               label: 'GitHub Issues',
-              href: 'https://github.com/sergiudm/schedule-everything/issues',
+              href: 'https://github.com/PhDeasy-org/schedule-everything/issues',
             },
             {
               label: 'Discussions',
-              href: 'https://github.com/sergiudm/schedule-everything/discussions',
+              href: 'https://github.com/PhDeasy-org/schedule-everything/discussions',
             },
           ],
         },
@@ -147,7 +147,7 @@ const config: Config = {
           items: [
             {
               label: 'GitHub Repository',
-              href: 'https://github.com/sergiudm/schedule-everything',
+              href: 'https://github.com/PhDeasy-org/schedule-everything',
             },
             {
               label: 'PyPI Package',

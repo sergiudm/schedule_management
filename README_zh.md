@@ -1,10 +1,10 @@
 # Schedule Everything (晨钟暮鼓)
 
-[![CI](https://github.com/sergiudm/schedule-everything/actions/workflows/tests.yml/badge.svg)](https://github.com/sergiudm/schedule-everything/actions/workflows/tests.yml)
+[![CI](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/tests.yml/badge.svg)](https://github.com/PhDeasy-org/schedule-everything/actions/workflows/tests.yml)
 [![PyPI version](https://badge.fury.io/py/schedule-management.svg)](https://pypi.org/project/schedule-management)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Documentation](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://sergiudm.github.io/schedule-everything/)
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/sergiudm/schedule-everything)
+[![Documentation](https://img.shields.io/badge/docs-GitHub_Pages-blue)](https://PhDeasy-org.github.io/schedule-everything/)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PhDeasy-org/schedule-everything)
 [English Version](README.md)
 
 一个面向 AI 的时间管理工具：更容易上手、本地优先，并尽量把日程建立在更健康、更科学的默认原则上，而不是单纯把时间塞满。
@@ -51,12 +51,12 @@
 
 使用 curl（推荐）：
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sergiudm/schedule-everything/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/PhDeasy-org/schedule-everything/main/install.sh | bash
 ```
 
 或者从本地克隆安装：
 ```bash
-git clone --recurse-submodules https://github.com/sergiudm/schedule-everything.git
+git clone --recurse-submodules https://github.com/PhDeasy-org/schedule-everything.git
 cd schedule-everything
 ./install.sh
 ./third_party/opencode/install --no-modify-path
@@ -141,11 +141,11 @@ npm run tauri:build
 
 README 不再展开低层手动配置流程，相关内容已移到文档站：
 
-- [Introduction](https://sergiudm.github.io/schedule-everything/docs/intro)
-- [Quick Start](https://sergiudm.github.io/schedule-everything/docs/quick-start)
-- [Installation](https://sergiudm.github.io/schedule-everything/docs/installation)
-- [Configuration Overview](https://sergiudm.github.io/schedule-everything/docs/configuration/overview)
-- [CLI Overview](https://sergiudm.github.io/schedule-everything/docs/cli/overview)
+- [Introduction](https://PhDeasy-org.github.io/schedule-everything/docs/intro)
+- [Quick Start](https://PhDeasy-org.github.io/schedule-everything/docs/quick-start)
+- [Installation](https://PhDeasy-org.github.io/schedule-everything/docs/installation)
+- [Configuration Overview](https://PhDeasy-org.github.io/schedule-everything/docs/configuration/overview)
+- [CLI Overview](https://PhDeasy-org.github.io/schedule-everything/docs/cli/overview)
 
 ## 许可证
 

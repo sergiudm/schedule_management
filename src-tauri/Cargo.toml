@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Schedule Everything daily command center"
 authors = ["Schedule Everything"]
 license = "MIT"
-repository = "https://github.com/sergiudm/schedule-everything"
+repository = "https://github.com/PhDeasy-org/schedule-everything"
 edition = "2021"
 
 [lib]

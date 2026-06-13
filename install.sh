@@ -5,7 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_URL="https://github.com/sergiudm/schedule-everything"
+REPO_URL="https://github.com/PhDeasy-org/schedule-everything"
 TEMP_DIR=""
 
 # Colors for output

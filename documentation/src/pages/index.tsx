@@ -22,7 +22,7 @@ function HomepageHeader() {
           </Link>
           <Link
             className="button button--outline button--lg"
-            to="https://github.com/sergiudm/schedule_management">
+            to="https://github.com/PhDeasy-org/schedule-everything">
             View on GitHub
           </Link>
         </div>
