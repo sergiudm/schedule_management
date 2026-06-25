@@ -11,7 +11,9 @@ from pathlib import Path
 from datetime import datetime, time, date
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+import schedule_management
 import schedule_management.reminder as reminder
+import schedule_management.runner as schedule_runner
 from schedule_management.synced_schedule import (
     SyncedDaySchedule,
     apply_synced_schedule,
@@ -258,6 +260,149 @@ class TestReportCommand:
         printed = "\n".join(str(call.args[0]) for call in mock_print.call_args_list)
         assert "'--days' is not supported for monthly reports." in printed
 
+    @patch("schedule_management.commands.service.open_file")
+    @patch("schedule_management.report.generate_manual_report")
+    def test_report_opens_file_cross_platform(
+        self, mock_generate_manual_report, mock_open_file
+    ):
+        """rmd report opens the generated PDF via open_file regardless of platform."""
+        mock_generate_manual_report.return_value = Path("/tmp/weekly_report.pdf")
+        mock_open_file.return_value = True
+
+        args = MagicMock(type="weekly", date=None, days=7)
+        result = reminder.report_command(args)
+
+        assert result == 0
+        mock_open_file.assert_called_once_with(Path("/tmp/weekly_report.pdf"))
+
+
+class TestOpenFileHelper:
+    """Test the cross-platform open_file helper."""
+
+    @patch("schedule_management.platform.subprocess.Popen")
+    @patch("schedule_management.platform.shutil.which")
+    @patch("schedule_management.platform.get_platform", return_value="macos")
+    def test_open_file_uses_open_on_macos(
+        self, mock_platform, mock_which, mock_popen
+    ):
+        from schedule_management.platform import open_file
+
+        mock_which.return_value = "/usr/bin/open"
+        assert open_file("/some/file.pdf") is True
+        mock_popen.assert_called_once_with(["open", "/some/file.pdf"])
+
+    @patch("schedule_management.platform.subprocess.Popen")
+    @patch("schedule_management.platform.shutil.which")
+    @patch("schedule_management.platform.get_platform", return_value="linux")
+    def test_open_file_uses_xdg_open_on_linux(
+        self, mock_platform, mock_which, mock_popen
+    ):
+        from schedule_management.platform import open_file
+
+        mock_which.return_value = "/usr/bin/xdg-open"
+        assert open_file(Path("/some/file.pdf")) is True
+        mock_popen.assert_called_once_with(["xdg-open", "/some/file.pdf"])
+
+    @patch("schedule_management.platform.shutil.which", return_value=None)
+    @patch("schedule_management.platform.get_platform", return_value="linux")
+    def test_open_file_returns_false_when_no_opener(self, mock_platform, mock_which):
+        from schedule_management.platform import open_file
+
+        assert open_file("/some/file.pdf") is False
+
+
+class TestPlatformSoundDefault:
+    """Test the platform-aware default notification sound."""
+
+    @patch("schedule_management.platform.get_platform", return_value="macos")
+    def test_sound_file_default_macos(self, _mock_platform):
+        from schedule_management.config import ScheduleConfig, _DEFAULT_SOUND_MACOS
+
+        config = ScheduleConfig.__new__(ScheduleConfig)
+        config.settings = {}
+        assert config.sound_file == _DEFAULT_SOUND_MACOS
+
+    @patch("schedule_management.platform.get_platform", return_value="linux")
+    def test_sound_file_default_linux(self, _mock_platform):
+        from schedule_management.config import ScheduleConfig, _DEFAULT_SOUND_LINUX
+
+        config = ScheduleConfig.__new__(ScheduleConfig)
+        config.settings = {}
+        assert config.sound_file == _DEFAULT_SOUND_LINUX
+
+    def test_sound_file_respects_explicit_setting(self):
+        from schedule_management.config import ScheduleConfig
+
+        config = ScheduleConfig.__new__(ScheduleConfig)
+        config.settings = {"sound_file": "/custom/sound.wav"}
+        assert config.sound_file == "/custom/sound.wav"
+
+
+class TestRunnerSoundExpansion:
+    """Test that the macOS sound-path expansion is gated to darwin."""
+
+    @patch.object(schedule_runner, "sys")
+    def test_short_sound_not_expanded_on_linux(self, mock_sys):
+        from schedule_management.runner import ScheduleRunner
+
+        # Simulate a non-macOS platform
+        mock_sys.platform = "linux"
+
+        runner = ScheduleRunner.__new__(ScheduleRunner)
+        runner.config = MagicMock()
+        runner.config.sound_file = "/usr/share/sounds/freedesktop/stereo/complete.oga"
+        runner.config.alarm_interval = 5
+        runner.config.max_alarm_duration = 10
+
+        captured: dict = {}
+        original_thread = schedule_runner.threading.Thread
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), kwargs=None, daemon=False):
+                captured["sound_file"] = args[2]
+
+            def start(self):
+                pass
+
+        schedule_runner.threading.Thread = FakeThread
+        try:
+            runner._trigger_alarm("title", "message", sound="Glass")
+        finally:
+            schedule_runner.threading.Thread = original_thread
+
+        # On Linux the short name must NOT be rewritten to a /System/Library path
+        assert captured["sound_file"] == "Glass"
+
+    @patch.object(schedule_runner, "sys")
+    def test_short_sound_expanded_on_macos(self, mock_sys):
+        from schedule_management.runner import ScheduleRunner
+
+        # Simulate macOS
+        mock_sys.platform = "darwin"
+
+        runner = ScheduleRunner.__new__(ScheduleRunner)
+        runner.config = MagicMock()
+        runner.config.alarm_interval = 5
+        runner.config.max_alarm_duration = 10
+
+        captured: dict = {}
+        original_thread = schedule_runner.threading.Thread
+
+        class FakeThread:
+            def __init__(self, target=None, args=(), kwargs=None, daemon=False):
+                captured["sound_file"] = args[2]
+
+            def start(self):
+                pass
+
+        schedule_runner.threading.Thread = FakeThread
+        try:
+            runner._trigger_alarm("title", "message", sound="Glass")
+        finally:
+            schedule_runner.threading.Thread = original_thread
+
+        assert captured["sound_file"] == "/System/Library/Sounds/Glass.aiff"
+
 
 class TestViewCommand:
     """Test the view command functionality."""
@@ -265,16 +410,16 @@ class TestViewCommand:
     @patch("schedule_management.commands.status._schedule_visualizer_class")
     @patch("schedule_management.commands.status.WeeklySchedule")
     @patch("schedule_management.commands.status.ScheduleConfig")
-    @patch("schedule_management.commands.status.subprocess.run")
+    @patch("schedule_management.commands.status.open_file")
     def test_view_success(
-        self, mock_subprocess, mock_config, mock_weekly, mock_visualizer_class
+        self, mock_open_file, mock_config, mock_weekly, mock_visualizer_class
     ):
         """Test successful view command."""
         mock_visualizer = MagicMock()
         mock_visualizer_instance = MagicMock()
         mock_visualizer.return_value = mock_visualizer_instance
         mock_visualizer_class.return_value = mock_visualizer
-        mock_subprocess.return_value = MagicMock(returncode=0)
+        mock_open_file.return_value = True
 
         # Configure the mock config to return a proper config_dir
         mock_config_instance = MagicMock()
@@ -286,6 +431,7 @@ class TestViewCommand:
 
         assert result == 0
         mock_visualizer_instance.visualize.assert_called_once()
+        mock_open_file.assert_called_once()
 
     @patch("schedule_management.commands.status._schedule_visualizer_class")
     @patch("schedule_management.commands.status.WeeklySchedule")
@@ -1403,6 +1549,94 @@ class TestTaskManagement:
         assert saved_tasks[0]["priority"] == 6
         assert saved_tasks[0]["type"] == "3"
 
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_postpone_default_no_alarm(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty
+    ):
+        """Empty postpone prompt keeps the task as a normal (non-future) task."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+
+        # description, priority, task type, then empty postpone (= 0)
+        mock_console_input.side_effect = ["Read book", "6", "1", ""]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+        args.postpone = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert "alarm_from" not in saved_tasks[0]
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_postpone_sets_alarm_from(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty
+    ):
+        """Entering a positive postpone day makes it a future task with alarm_from."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+
+        # description, priority, task type, then postpone 2 days
+        mock_console_input.side_effect = ["Future task", "7", "1", "2"]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+        args.postpone = None
+
+        from datetime import datetime, timedelta
+        expected_alarm_from = (datetime.now().date() + timedelta(days=2)).isoformat()
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert saved_tasks[0]["alarm_from"] == expected_alarm_from
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_postpone_retries_on_invalid_input(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty
+    ):
+        """Invalid postpone input is retried until a valid value is entered."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+
+        # task type, then: non-numeric, negative, valid 3
+        mock_console_input.side_effect = ["Plan trip", "5", "1", "abc", "-2", "3"]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+        args.postpone = None
+
+        from datetime import datetime, timedelta
+        expected_alarm_from = (datetime.now().date() + timedelta(days=3)).isoformat()
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert saved_tasks[0]["alarm_from"] == expected_alarm_from
 
     @patch("schedule_management.commands.tasks.load_tasks")
     @patch("schedule_management.commands.tasks.save_tasks")

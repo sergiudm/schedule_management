@@ -61,7 +61,7 @@ Selected sources:
     *   **Time Points**: Instant, one-off reminders (e.g., "Hydrate", "Bedtime").
     *   **Common Routines**: Define daily habits once, apply them everywhere.
 *   **CLI Power**: A comprehensive command-line interface for managing tasks, visualizing schedules, and controlling the daemon.
-*   **System Integration**: Runs as a native background service (via `launchd` on macOS), ensuring reliability across reboots.
+*   **System Integration**: Runs as a native background service (via `launchd` on macOS or a `systemd` user service on Linux), ensuring reliability across reboots.
 
 ## Why TOML?
 

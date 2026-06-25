@@ -48,10 +48,18 @@ It installs `rmd` as the primary CLI and keeps `reminder` as a compatibility ali
     *   Register the background service (on macOS and Linux).
 
 2.  **Finalize Setup**:
-    Follow the on-screen instructions to load the service. Typically, this involves:
-    ```bash
-    launchctl load ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
-    ```
+    Follow the on-screen instructions to start the background service.
+    -   **macOS** (launchd):
+        ```bash
+        launchctl load ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
+        ```
+    -   **Linux** (systemd user service):
+        ```bash
+        systemctl --user start schedule-management.service
+        systemctl --user enable schedule-management.service  # auto-start at login
+        ```
+        > Make sure lingering is enabled so the user service runs without an
+        > active login session: `loginctl enable-linger "$USER"`.
 
 ### Method 2: Manual Installation
 
@@ -148,11 +156,17 @@ Confirm that everything is working correctly.
     ```
     *Expected output: A list of available commands.*
 
-2.  **Check Service Status** (macOS):
-    ```bash
-    launchctl list | grep schedule
-    ```
-    *Expected output: A process ID and status code (usually 0).*
+2.  **Check Service Status**:
+    -   **macOS**:
+        ```bash
+        launchctl list | grep schedule
+        ```
+        *Expected output: A process ID and status code (usually 0).*
+    -   **Linux**:
+        ```bash
+        systemctl --user status schedule-management.service
+        ```
+        *Expected output: `active (running)` with recent log lines.*
 
 3.  **View Schedule**:
     ```bash
@@ -165,9 +179,15 @@ Confirm that everything is working correctly.
 To completely remove the application:
 
 1.  **Unload the Service**:
-    ```bash
-    launchctl unload ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
-    ```
+    -   **macOS**:
+        ```bash
+        launchctl unload ~/Library/LaunchAgents/com.sergiudm.schedule.management.reminder.plist
+        ```
+    -   **Linux**:
+        ```bash
+        systemctl --user stop schedule-management.service
+        systemctl --user disable schedule-management.service
+        ```
 
 2.  **Remove Configuration & Data**:
     ```bash

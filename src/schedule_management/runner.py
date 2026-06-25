@@ -28,6 +28,7 @@ Entry Point:
 """
 
 import json
+import sys
 import threading
 import time
 from datetime import datetime
@@ -154,8 +155,16 @@ class ScheduleRunner:
         """
         sound_file = sound if sound else self.config.sound_file
 
-        # Handle short sound names (convert to full path)
-        if sound and "/" not in sound and not sound.endswith(".aiff"):
+        # On macOS, expand a short sound name (e.g. "Glass") to the matching
+        # /System/Library/Sounds entry. On other platforms the short name/path
+        # is passed through unchanged so play_sound can use whatever default
+        # or backend the platform supports.
+        if (
+            sys.platform == "darwin"
+            and sound
+            and "/" not in sound
+            and not sound.endswith(".aiff")
+        ):
             sound_file = f"/System/Library/Sounds/{sound}.aiff"
 
         # Run alarm in background thread to not block main loop

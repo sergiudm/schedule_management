@@ -19,8 +19,10 @@ Example Usage:
     >>> show_dialog('Reminder: Time for a break!')
 """
 
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 
 # =============================================================================
@@ -50,6 +52,43 @@ def get_platform() -> str:
         return "windows"
     else:
         return "unknown"
+
+
+def open_file(path: str | Path) -> bool:
+    """
+    Open a file or directory using the platform's default application.
+
+    Picks the native "open" command for the current platform and falls back
+    silently if no suitable opener is found.
+
+    Args:
+        path: File or directory path to open.
+
+    Returns:
+        True if an opener command was available and launched, False otherwise.
+        Note: a True result does not guarantee the application actually opened
+        the file; the opener process is spawned non-blocking.
+
+    Example:
+        >>> open_file('/path/to/report.pdf')
+    """
+    platform_name = get_platform()
+    if platform_name == "macos":
+        openers = ["open"]
+    elif platform_name == "linux":
+        openers = ["xdg-open"]
+    else:
+        openers = ["xdg-open", "open"]
+
+    for opener in openers:
+        if shutil.which(opener) is None:
+            continue
+        try:
+            subprocess.Popen([opener, str(path)])
+            return True
+        except (FileNotFoundError, OSError):
+            continue
+    return False
 
 
 # =============================================================================

@@ -177,6 +177,42 @@ def add_task(args) -> int:
                     else:
                         console.print("[bold yellow]" + _t("⚠️  Oops! Invalid selection. Please choose a valid number from the list.") + "[/bold yellow]")
 
+            # Optional: postpone the daily urgent alarm to make this a future task.
+            if postpone is None:
+                console.print(
+                    "\n[bold cyan]"
+                    + _t("🗓️  Postpone the daily urgent alarm? Enter days from now (0 or empty = start today): ")
+                    + "[/bold cyan]"
+                )
+                while True:
+                    try:
+                        postpone_input = console.input(
+                            "[bold cyan]" + _t("Postpone days (default 0): ") + "[/bold cyan]"
+                        ).strip()
+                    except (EOFError, KeyboardInterrupt):
+                        print("\n" + _t("👋 Operation cancelled. Have a great day! ✨"))
+                        return 1
+                    if postpone_input == "":
+                        postpone = 0
+                        break
+                    try:
+                        postpone_val = int(postpone_input)
+                        if postpone_val < 0:
+                            console.print(
+                                "[bold yellow]"
+                                + _t("⚠️  Oops! Postpone days must be a non-negative integer. Let's try that again! 🌟")
+                                + "[/bold yellow]"
+                            )
+                            continue
+                        postpone = postpone_val
+                        break
+                    except ValueError:
+                        console.print(
+                            "[bold yellow]"
+                            + _t("⚠️  Oops! Postpone days needs to be a valid number. Please enter a non-negative integer! 🔢")
+                            + "[/bold yellow]"
+                        )
+
     # Validate priority
     if priority <= 0:
         print(_t("❌ Error: Priority must be a positive integer"))

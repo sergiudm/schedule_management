@@ -36,7 +36,7 @@ rmd add "Biology homework" 9 1 1
 ```
 
 ### Interactive Mode
-If you run `rmd add` directly without parameters in an interactive terminal, or if you omit some parameters, the system will display a friendly **Task Creator Wizard** panel, guiding you through a couple of quick questions one by one with emojis to complete the task description, priority level, and task type.
+If you run `rmd add` directly without parameters in an interactive terminal, or if you omit some parameters, the system will display a friendly **Task Creator Wizard** panel, guiding you through a couple of quick questions one by one with emojis to complete the task description, priority level, task type, and the optional **postpone days** (to make it a future task whose daily urgent alarm starts later). Press Enter at the postpone prompt to skip it and start the alarm today.
 
 If you are running in a non-interactive environment (such as a script), omitting the required parameters will print an error message and exit with an error code. Any omitted optional parameters (like task type) will fall back to their default values (e.g. task type 1).
 

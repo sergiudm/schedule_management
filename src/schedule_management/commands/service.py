@@ -31,6 +31,7 @@ from schedule_management import (
     HABIT_PATH,
 )
 from schedule_management.i18n import _t
+from schedule_management.platform import open_file
 from schedule_management.config_layout import (
     list_config_ids,
     preview_active_config_dir,
@@ -398,12 +399,9 @@ def report_command(args) -> int:
         if report_path:
             print("\n" + _t("✅ Report generated: {path}").format(path=report_path))
 
-            # Try to open on macOS
-            if sys.platform == "darwin":
-                try:
-                    subprocess.run(["open", str(report_path)], check=False)
-                except Exception:
-                    pass  # Silent fail for opening
+            # Try to open the generated report in the default viewer (cross-platform)
+            if not open_file(report_path):
+                pass  # No opener available; the report path was already printed above
 
             return 0
         else:

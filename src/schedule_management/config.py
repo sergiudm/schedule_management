@@ -28,6 +28,23 @@ from typing import Any
 import tomllib
 
 
+# Default notification sounds per platform. These are only used when a config
+# does not set ``sound_file`` explicitly; if the file is absent at runtime the
+# alarm still fires (the dialog appears, the sound is simply skipped).
+_DEFAULT_SOUND_MACOS = "/System/Library/Sounds/Ping.aiff"
+# Ships with sound-theme-freedesktop on most GNOME/Ubuntu/Fedora installs.
+_DEFAULT_SOUND_LINUX = "/usr/share/sounds/freedesktop/stereo/complete.oga"
+
+
+def _default_sound_file() -> str:
+    """Return the platform-appropriate default notification sound path."""
+    from schedule_management.platform import get_platform
+
+    if get_platform() == "macos":
+        return _DEFAULT_SOUND_MACOS
+    return _DEFAULT_SOUND_LINUX
+
+
 # =============================================================================
 # TOML FILE LOADING
 # =============================================================================
@@ -106,10 +123,13 @@ class ScheduleConfig:
         """
         Path to the notification sound file.
 
-        Returns:
-            Sound file path (default: macOS Ping sound)
+        Returns the configured ``sound_file`` if set; otherwise falls back to a
+        platform-appropriate system sound (macOS ``Ping.aiff`` or the
+        freedesktop ``complete.oga`` on Linux). On platforms where the default
+        file is missing, ``play_sound`` degrades gracefully to no audio while
+        the alarm dialog still appears.
         """
-        return self.settings.get("sound_file", "/System/Library/Sounds/Ping.aiff")
+        return self.settings.get("sound_file", _default_sound_file())
 
     @property
     def alarm_interval(self) -> int:

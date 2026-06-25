@@ -400,17 +400,20 @@ configure_configs() {
         extra_args+=("--yes")
     fi
 
+    local wizard_invocation=(
+        "$INSTALL_DIR/.venv/bin/python" "$wizard_script"
+        --config-dir "$target_config_dir"
+    )
     if [[ -d "$template_dir" ]]; then
-        "$INSTALL_DIR/.venv/bin/python" "$wizard_script" \
-            --config-dir "$target_config_dir" \
-            --template-dir "$template_dir" \
-            "${extra_args[@]:-}"
+        wizard_invocation+=(--template-dir "$template_dir")
     else
         log_warning "Template directory not found at $template_dir; using config directory as template source."
-        "$INSTALL_DIR/.venv/bin/python" "$wizard_script" \
-            --config-dir "$target_config_dir" \
-            "${extra_args[@]:-}"
     fi
+    if [[ ${#extra_args[@]} -gt 0 ]]; then
+        wizard_invocation+=("${extra_args[@]}")
+    fi
+
+    "${wizard_invocation[@]}"
 
     log_info "Validated active config directory: $target_config_dir"
     log_success "Configuration checks complete"

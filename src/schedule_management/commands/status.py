@@ -14,7 +14,6 @@ Example Usage (via CLI):
     $ rmd view            # Generate schedule PDF
 """
 
-import subprocess
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -32,6 +31,7 @@ except ImportError:
 
 from schedule_management import SETTINGS_PATH, ODD_PATH, EVEN_PATH
 from schedule_management.i18n import _t
+from schedule_management.platform import open_file
 from schedule_management.config import ScheduleConfig, WeeklySchedule
 from schedule_management.synced_schedule import (
     apply_synced_schedule,
@@ -410,24 +410,14 @@ def view_command(args) -> int:
 
         print("\n" + _t("📁 Visualization file generated:"))
 
-        # Open PDF on macOS
-        if sys.platform == "darwin":
-            print("\n" + _t("🖼️  Opening visualization..."))
-            try:
-                import platform
-
-                if platform.system() == "Windows":
-                    desktop_path = Path.home() / "Desktop"
-                else:
-                    desktop_path = Path.home() / "Desktop"
-
-                pdf_path = desktop_path / "schedule_visualization.pdf"
-                subprocess.run(
-                    ["open", str(pdf_path)],
-                    check=False,
-                )
-            except Exception as e:
-                print(_t("⚠️  Could not open file: {e}").format(e=e))
+        # Open the generated PDF in the default viewer (cross-platform)
+        print("\n" + _t("🖼️  Opening visualization..."))
+        try:
+            pdf_path = Path.home() / "Desktop" / "schedule_visualization.pdf"
+            if not open_file(pdf_path):
+                print(_t("⚠️  Could not open file automatically. File saved to: {path}").format(path=pdf_path))
+        except Exception as e:
+            print(_t("⚠️  Could not open file: {e}").format(e=e))
 
         return 0
 
