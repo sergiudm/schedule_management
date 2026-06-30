@@ -130,8 +130,9 @@ the macOS bundles under `src-tauri/target/release/bundle/`.
 | `rmd setup` | Build or modify your schedule with a profile-first AI workflow |
 | `rmd sync` | Assign today's pomodoro/potato blocks to tasks with preview + approval |
 | `rmd status [-v]` | Show what is happening now and today's schedule, including synced titles |
-| `rmd add/ls/rm` | Manage the task list that feeds the sync flow |
-| `rmd history [n]` | Show recent completed task activities (default: 5) |
+| `rmd add/ls/rm` | Manage the task list that feeds the sync flow (`rm` counts as completed) |
+| `rmd cancel` / `rmd drop` | Remove a task without counting it as done (added by mistake, or giving up) |
+| `rmd history [n]` | Show recent task activities; completed, cancelled, and dropped are shown distinctly (default: 5) |
 | `rmd track` | Record habits |
 | `rmd ddl` | Manage deadlines; entries two or more days overdue are auto-pruned |
 | `rmd view` | Generate a PDF schedule visualization |

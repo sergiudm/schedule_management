@@ -52,7 +52,7 @@ from schedule_management.config_layout import (
 )
 
 # Import command handlers from organized modules
-from schedule_management.commands.tasks import add_task, delete_task, show_tasks
+from schedule_management.commands.tasks import add_task, delete_task, show_tasks, cancel_task, drop_task
 from schedule_management.commands.history import history_command
 from schedule_management.commands.deadlines import (
     add_deadline,
@@ -93,7 +93,9 @@ def create_parser() -> argparse.ArgumentParser:
     Structure:
         rmd
         ├── add <task> <priority>       - Add new task
-        ├── rm <tasks...>               - Remove tasks
+        ├── rm <tasks...>               - Remove tasks (counts as completed)
+        ├── cancel <tasks...>           - Remove tasks added by mistake (not completed)
+        ├── drop <tasks...>             - Give up on tasks (not completed)
         ├── ls                          - List tasks
         ├── history [n]                 - Show recent activities
         ├── ddl                         - Deadline management
@@ -196,11 +198,50 @@ def create_parser() -> argparse.ArgumentParser:
     )
     delete_parser.set_defaults(func=delete_task)
 
+    # cancel - Cancel a task that was added by mistake (not counted as completion)
+    cancel_parser = subparsers.add_parser(
+        "cancel",
+        help="Cancel tasks added by mistake (not counted as done)",
+        description=(
+            "Remove tasks that were added by mistake. Like 'rm' but recorded as "
+            "'cancelled' so it does not count as a completion in history/reports."
+        ),
+    )
+    cancel_parser.add_argument(
+        "tasks",
+        nargs="+",
+        help="Task descriptions or ID numbers from 'rmd ls'",
+    )
+    cancel_parser.set_defaults(func=cancel_task)
+
+    # drop - Give up on a task (not counted as completion)
+    drop_parser = subparsers.add_parser(
+        "drop",
+        help="Give up on tasks (not counted as done)",
+        description=(
+            "Abandon tasks you no longer intend to do. Like 'rm' but recorded as "
+            "'dropped' so it does not count as a completion in history/reports."
+        ),
+    )
+    drop_parser.add_argument(
+        "tasks",
+        nargs="+",
+        help="Task descriptions or ID numbers from 'rmd ls'",
+    )
+    drop_parser.set_defaults(func=drop_task)
+
     # ls - List tasks
     show_parser = subparsers.add_parser(
         "ls",
         help="Show all tasks sorted by importance",
         description="Display your task list sorted by priority.",
+    )
+    show_parser.add_argument(
+        "-t",
+        "--type",
+        dest="task_type",
+        default=None,
+        help="Only show tasks of this type. Accepts a task type ID (e.g. 1) or name (e.g. 'coding').",
     )
     show_parser.set_defaults(func=show_tasks)
 

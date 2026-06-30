@@ -3,21 +3,31 @@ Task Commands - CLI commands for task management.
 
 This module provides CLI command handlers for managing tasks:
 - add_task: Add a new task with priority
-- delete_task: Remove one or more tasks
+- delete_task: Remove one or more tasks (logged as 'deleted' = completed)
+- cancel_task: Remove tasks that were added by mistake (logged as 'cancelled')
+- drop_task: Remove tasks you are giving up on (logged as 'dropped')
 - show_tasks: Display all tasks in a formatted table
 
 Tasks are stored in a JSON file with 'description' and 'priority' fields.
 All actions are logged to the task log for history tracking.
 
+The three removal commands all take the task out of tasks.json, but each
+records a distinct history action so they are not all treated as completion:
+- 'rm'      -> action 'deleted'   (counts as done; shown in reports/popups/history)
+- 'cancel'  -> action 'cancelled' (a mistake; not counted as done)
+- 'drop'    -> action 'dropped'   (gave up; not counted as done)
+
 Example Usage (via CLI):
     $ rmd add "Study math" 8        # Add task with priority 8
     $ rmd ls                         # List all tasks
-    $ rmd rm 1                       # Delete task by ID
-    $ rmd rm "Study math"            # Delete task by description
+    $ rmd rm 1                       # Delete task by ID (counts as completed)
+    $ rmd cancel "typo"              # Cancel an accidentally added task
+    $ rmd drop "side project"        # Give up on a task
 """
 
 import sys
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from schedule_management import SETTINGS_PATH
@@ -56,6 +66,80 @@ def _should_show_tasks_after_change() -> bool:
         return ScheduleConfig(str(SETTINGS_PATH)).show_tasks_after_change
     except Exception:
         return False
+
+
+def _save_new_task_type(settings_path: str, type_id: str, type_name: str) -> bool:
+    """Persist a newly created task type to settings.toml.
+
+    Loads the active settings via :class:`SettingsModel` so the rest of the
+    file is preserved, adds the new key under ``[task_types]``, and saves.
+    Returns True on success, False if the write failed (the caller falls
+    back to using the type only for the current task).
+    """
+    try:
+        from schedule_management.commands.settings import SettingsModel
+
+        path = Path(settings_path)
+        model = SettingsModel(path)
+        model.set("task_types", type_id, type_name)
+        model.save()
+        return True
+    except Exception:
+        return False
+
+
+def _prompt_create_task_type(
+    console: "Console",
+    task_types: dict[str, str],
+    type_id: str,
+    settings_path: str,
+) -> str | None:
+    """Finish creating a new task type identified by ``type_id``.
+
+    Prompts for a non-empty type name, persists it to settings.toml so it is
+    available for future tasks, and returns the chosen ``type_id``. Returns
+    ``None`` if the user cancels (Ctrl+C / EOF) or enters an empty name.
+    """
+    console.print(
+        "[bold green]"
+        + _t("✨ New task type! Let's create type {type_id}.").format(type_id=type_id)
+        + "[/bold green]"
+    )
+    while True:
+        try:
+            type_name = console.input(
+                "[bold cyan]" + _t("🏷️  Enter a name for task type {type_id}: ").format(type_id=type_id)
+                + "[/bold cyan]"
+            ).strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n" + _t("👋 Operation cancelled. Have a great day! ✨"))
+            return None
+        if not type_name:
+            console.print("[bold yellow]" + _t("⚠️  Oops! Task type name can't be empty. Let's try that again! 😊") + "[/bold yellow]")
+            continue
+        if type_name in task_types.values():
+            console.print("[bold yellow]" + _t("⚠️  Oops! A task type with that name already exists. Let's try that again! 😊") + "[/bold yellow]")
+            continue
+        break
+
+    if _save_new_task_type(settings_path, type_id, type_name):
+        task_types[type_id] = type_name
+        console.print(
+            "[bold green]"
+            + _t("✅ Task type '{type_name}' (number {type_id}) created and saved!").format(
+                type_name=type_name, type_id=type_id
+            )
+            + "[/bold green]"
+        )
+    else:
+        # Persist the type in memory for this task even if the write failed.
+        task_types[type_id] = type_name
+        console.print(
+            "[bold yellow]"
+            + _t("⚠️  Could not save the new task type to settings.toml; using it for this task only.").format()
+            + "[/bold yellow]"
+        )
+    return type_id
 
 
 def add_task(args) -> int:
@@ -165,6 +249,7 @@ def add_task(args) -> int:
                 sorted_types = sorted(task_types.items(), key=lambda item: int(item[0]) if item[0].isdigit() else 999)
                 for k, v in sorted_types:
                     console.print(f"  [green]{k}[/green]. {v}")
+                console.print("[dim]" + _t("💡 Tip: enter a number not listed above to create a new task type.") + "[/dim]")
                 while True:
                     try:
                         type_input = console.input("[bold cyan]" + _t("Enter Task Type Number: ") + "[/bold cyan]").strip()
@@ -174,8 +259,17 @@ def add_task(args) -> int:
                     if type_input in task_types:
                         task_type = int(type_input)
                         break
-                    else:
-                        console.print("[bold yellow]" + _t("⚠️  Oops! Invalid selection. Please choose a valid number from the list.") + "[/bold yellow]")
+                    # Treat an unrecognized number as a request to create a new type.
+                    if type_input.isdigit() and int(type_input) > 0:
+                        created = _prompt_create_task_type(
+                            console, task_types, type_input, str(SETTINGS_PATH)
+                        )
+                        if created is None:
+                            # User cancelled creating the new type; re-prompt for the type number.
+                            continue
+                        task_type = int(created)
+                        break
+                    console.print("[bold yellow]" + _t("⚠️  Oops! Please enter a positive number (an existing one or a new one to create a type).") + "[/bold yellow]")
 
             # Optional: postpone the daily urgent alarm to make this a future task.
             if postpone is None:
@@ -295,30 +389,31 @@ def add_task(args) -> int:
 
 
 # =============================================================================
-# DELETE TASK COMMAND
+# TASK REMOVAL COMMANDS (rm / cancel / drop)
 # =============================================================================
 
 
-def delete_task(args) -> int:
+def _remove_tasks(args, *, log_action: str, success_single: str, success_multi: str) -> int:
     """
-    Handle the 'rm' command - delete one or more tasks.
+    Shared engine for the rm / cancel / drop commands.
 
-    Tasks can be identified by:
-    - ID number (from 'rmd ls' output)
-    - Exact description text
+    Removes one or more tasks identified by ID number (from 'rmd ls') or by
+    exact description text. All removal commands take the task out of
+    tasks.json and keep the procrastinate list in sync; only the recorded
+    history ``log_action`` differs, so each command produces a distinct
+    history while sharing identical matching/sorting behavior.
 
     Args:
-        args: Namespace with 'tasks' (list of identifiers)
+        args: Namespace with 'tasks' (list of identifiers).
+        log_action: The history action to record for each removed task
+            ('deleted', 'cancelled', or 'dropped').
+        success_single: i18n template for the single-success message,
+            expecting a ``{deletion}`` placeholder.
+        success_multi: i18n template for the multi-success header,
+            expecting a ``{count}`` placeholder.
 
     Returns:
-        0 on success, 1 if any deletions failed
-
-    Example:
-        $ rmd rm 1 2 3
-        ✅ 3 sets of tasks deleted successfully
-
-        $ rmd rm "Study math"
-        ✅ Task 'Study math' deleted successfully!
+        0 on success, 1 if any removals failed or saving failed.
     """
     task_identifiers = args.tasks
 
@@ -336,9 +431,8 @@ def delete_task(args) -> int:
     today = datetime.now().date()
     sorted_tasks = _sort_tasks_by_section_and_priority(tasks, today, procrastinate_list)
 
-    total_deleted_count = 0
-    all_errors = []
-    successful_deletions = []
+    all_errors: list[str] = []
+    successful_removals: list[str] = []
 
     for task_identifier in task_identifiers:
         # Try to parse as integer ID first
@@ -359,17 +453,17 @@ def delete_task(args) -> int:
 
             # Remove from original tasks list
             original_count = len(tasks)
-            deleted_tasks = [t for t in tasks if t["description"] == task_description]
+            removed_tasks = [t for t in tasks if t["description"] == task_description]
             tasks = [t for t in tasks if t["description"] != task_description]
 
         except ValueError:
             # Treat as string description
             task_description = task_identifier
             original_count = len(tasks)
-            deleted_tasks = [t for t in tasks if t["description"] == task_description]
+            removed_tasks = [t for t in tasks if t["description"] == task_description]
             tasks = [t for t in tasks if t["description"] != task_description]
 
-        # Check if anything was deleted
+        # Check if anything was removed
         if len(tasks) == original_count:
             error_msg = _t("❌ Task '{task_description}' not found").format(
                 task_description=task_description
@@ -377,29 +471,29 @@ def delete_task(args) -> int:
             all_errors.append(error_msg)
             continue
 
-        # Log deletions
+        # Log removals with the caller-specified action so each command
+        # produces a distinct history.
         try:
-            for deleted_task in deleted_tasks:
-                log_task_action("deleted", deleted_task)
+            for removed_task in removed_tasks:
+                log_task_action(log_action, removed_task)
         except Exception as e:
             print(_t("⚠️  Warning: Could not log task deletion: {e}").format(e=e))
 
-        # Keep procrastinate list in sync with completed tasks
-        for deleted_task in deleted_tasks:
-            description = deleted_task.get("description")
+        # Keep procrastinate list in sync with removed tasks
+        for removed_task in removed_tasks:
+            description = removed_task.get("description")
             if isinstance(description, str) and description in procrastinate_list:
                 procrastinate_list.discard(description)
                 procrastinate_updated = True
 
-        deleted_count = original_count - len(tasks)
-        total_deleted_count += deleted_count
+        removed_count = original_count - len(tasks)
 
-        if deleted_count == 1:
-            successful_deletions.append(_t("Task '{task_description}'").format(task_description=task_description))
+        if removed_count == 1:
+            successful_removals.append(_t("Task '{task_description}'").format(task_description=task_description))
         else:
-            successful_deletions.append(
+            successful_removals.append(
                 _t("{deleted_count} tasks with description '{task_description}'").format(
-                    deleted_count=deleted_count, task_description=task_description
+                    deleted_count=removed_count, task_description=task_description
                 )
             )
 
@@ -407,19 +501,17 @@ def delete_task(args) -> int:
     for error in all_errors:
         print(error)
 
-    if successful_deletions:
+    if successful_removals:
         try:
             save_tasks(tasks)
             if procrastinate_updated:
                 save_procrastinate_list(procrastinate_list)
-            if len(successful_deletions) == 1:
-                print(_t("✅ {deletion} deleted successfully!").format(deletion=successful_deletions[0]))
+            if len(successful_removals) == 1:
+                print(success_single.format(deletion=successful_removals[0]))
             else:
-                print(
-                    _t("✅ {count} sets of tasks deleted successfully:").format(count=len(successful_deletions))
-                )
-                for deletion in successful_deletions:
-                    print(f"   - {deletion}")
+                print(success_multi.format(count=len(successful_removals)))
+                for removal in successful_removals:
+                    print(f"   - {removal}")
             if _should_show_tasks_after_change():
                 show_tasks(args)
             return 0 if not all_errors else 1
@@ -428,6 +520,93 @@ def delete_task(args) -> int:
             return 1
     else:
         return 1
+
+
+def delete_task(args) -> int:
+    """
+    Handle the 'rm' command - delete one or more tasks.
+
+    Tasks can be identified by:
+    - ID number (from 'rmd ls' output)
+    - Exact description text
+
+    Removal is logged with action 'deleted', which counts as completion in
+    history, reports, and popups. Use 'cancel' or 'drop' instead when the
+    task should NOT be counted as done.
+
+    Args:
+        args: Namespace with 'tasks' (list of identifiers)
+
+    Returns:
+        0 on success, 1 if any deletions failed
+
+    Example:
+        $ rmd rm 1 2 3
+        ✅ 3 sets of tasks deleted successfully
+
+        $ rmd rm "Study math"
+        ✅ Task 'Study math' deleted successfully!
+    """
+    return _remove_tasks(
+        args,
+        log_action="deleted",
+        success_single=_t("✅ {deletion} deleted successfully!"),
+        success_multi=_t("✅ {count} sets of tasks deleted successfully:"),
+    )
+
+
+def cancel_task(args) -> int:
+    """
+    Handle the 'cancel' command - remove a task that was added by mistake.
+
+    Behaves like 'rm' (removes the task and syncs the procrastinate list) but
+    logs the action as 'cancelled' instead of 'deleted', so it is NOT counted
+    as a completion in history, reports, or popups. Use this when an earlier
+    'add' was a mistake.
+
+    Args:
+        args: Namespace with 'tasks' (list of identifiers)
+
+    Returns:
+        0 on success, 1 if any cancellations failed
+
+    Example:
+        $ rmd cancel "typo task"
+        🚫 Task 'typo task' cancelled (not counted as done).
+    """
+    return _remove_tasks(
+        args,
+        log_action="cancelled",
+        success_single=_t("🚫 {deletion} cancelled (not counted as done)."),
+        success_multi=_t("🚫 {count} sets of tasks cancelled (not counted as done):"),
+    )
+
+
+def drop_task(args) -> int:
+    """
+    Handle the 'drop' command - give up on one or more tasks.
+
+    Behaves like 'rm' (removes the task and syncs the procrastinate list) but
+    logs the action as 'dropped' instead of 'deleted', so it is NOT counted
+    as a completion in history, reports, or popups. Use this when you have too
+    many tasks and want to abandon some without crediting them as done.
+
+    Args:
+        args: Namespace with 'tasks' (list of identifiers)
+
+    Returns:
+        0 on success, 1 if any drops failed
+
+    Example:
+        $ rmd drop "side project"
+        🏳️ Task 'side project' dropped (gave up).
+    """
+    return _remove_tasks(
+        args,
+        log_action="dropped",
+        success_single=_t("🏳️ {deletion} dropped (gave up)."),
+        success_multi=_t("🏳️ {count} sets of tasks dropped (gave up):"),
+    )
 
 
 # =============================================================================
@@ -492,6 +671,22 @@ def _sort_tasks_by_section_and_priority(
     return sorted(tasks, key=task_sort_key)
 
 
+def _resolve_task_type_id(value: str, task_types: dict[str, str]) -> str | None:
+    """Resolve a user-provided type filter to a canonical task type ID.
+
+    Accepts either a type ID (e.g. '1') or a type name (e.g. 'coding'). The
+    match against names is case-insensitive. Returns the matching type ID, or
+    ``None`` if nothing matches.
+    """
+    if value in task_types:
+        return value
+    lowered = value.lower()
+    for tid, tname in task_types.items():
+        if isinstance(tname, str) and tname.lower() == lowered:
+            return tid
+    return None
+
+
 def show_tasks(args) -> int:
     """
     Handle the 'ls' command - display all tasks in a formatted table.
@@ -502,10 +697,10 @@ def show_tasks(args) -> int:
     - Task description
 
     Args:
-        args: Namespace (unused, for CLI compatibility)
+        args: Namespace with optional 'task_type' filter (type ID or name)
 
     Returns:
-        0 always (display operation)
+        0 on success, 1 if an invalid type filter was given
 
     Example output:
         ╭──────────────────────────────────────╮
@@ -542,6 +737,27 @@ def show_tasks(args) -> int:
         task_types = dict(DEFAULT_TASK_TYPES)
 
     sorted_type_ids = sorted(task_types.keys(), key=lambda x: int(x) if x.isdigit() else 999)
+
+    # Resolve an optional --type filter (accepts a type ID like '1' or a type
+    # name like 'coding') to the canonical type ID used in task records. Only a
+    # real string activates the filter, so callers passing a plain Namespace or
+    # a mock arg without this attribute are treated as "no filter".
+    type_filter = getattr(args, "task_type", None)
+    filter_type_id: str | None = None
+    if isinstance(type_filter, str) and type_filter:
+        resolved = _resolve_task_type_id(type_filter, task_types)
+        if resolved is None:
+            valid = ", ".join(f"{tid}={tname}" for tid, tname in sorted(task_types.items()))
+            console.print(
+                "[bold red]"
+                + _t("❌ Unknown task type '{type_filter}'. Valid types: {valid}").format(
+                    type_filter=type_filter, valid=valid
+                )
+                + "[/bold red]"
+            )
+            return 1
+        filter_type_id = resolved
+
     COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan", "white", "bright_blue", "bright_green", "bright_red"]
     type_colors = {}
     for idx, tid in enumerate(sorted_type_ids):
@@ -559,10 +775,20 @@ def show_tasks(args) -> int:
     table.add_column(_t("Priority"), justify="left", no_wrap=True)
     table.add_column(_t("Description"), justify="left")
 
+    # Enumerate over the full sorted list so the displayed IDs match what
+    # 'rm'/'cancel'/'drop' resolve (they index against the full 'ls' order).
+    # When a --type filter is active, skip rows of other types without
+    # re-numbering the visible IDs.
+    displayed_count = 0
     for i, task in enumerate(sorted_tasks, 1):
         description = task["description"]
         priority = task["priority"]
         alarm_from = task.get("alarm_from")
+
+        # Determine task type
+        task_type_id = str(task.get("type", sorted_type_ids[0] if sorted_type_ids else "1"))
+        if filter_type_id is not None and task_type_id != filter_type_id:
+            continue
 
         postpone_suffix = ""
         is_postponed_future = False
@@ -576,8 +802,6 @@ def show_tasks(args) -> int:
             except Exception:
                 pass
 
-        # Determine task type
-        task_type_id = str(task.get("type", sorted_type_ids[0] if sorted_type_ids else "1"))
         color = type_colors.get(task_type_id, "white")
         type_name = task_types.get(task_type_id, "other")
 
@@ -606,6 +830,16 @@ def show_tasks(args) -> int:
             description_text = Text(f"{description}")
 
         table.add_row(str(i), prio_visual, description_text)
+        displayed_count += 1
+
+    if filter_type_id is not None and displayed_count == 0:
+        type_name = task_types.get(filter_type_id, "other")
+        console.print(
+            "[bold yellow]"
+            + _t("📋 No tasks found for type '{type_name}'").format(type_name=type_name)
+            + "[/bold yellow]"
+        )
+        return 0
 
     legend_items = []
     for tid in sorted_type_ids:
@@ -616,6 +850,13 @@ def show_tasks(args) -> int:
 
     console.print(table)
     console.print(legend_str)
-    console.print("[dim]" + _t("Total tasks: {count}").format(count=len(tasks)) + "[/dim]", justify="right")
+    footer = (
+        _t("Showing {shown} of {total} tasks (type: {type_name})").format(
+            shown=displayed_count, total=len(tasks), type_name=task_types.get(filter_type_id, "other")
+        )
+        if filter_type_id is not None
+        else _t("Total tasks: {count}").format(count=len(tasks))
+    )
+    console.print("[dim]" + footer + "[/dim]", justify="right")
 
     return 0

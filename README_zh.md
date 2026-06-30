@@ -128,8 +128,9 @@ npm run tauri:build
 | `rmd setup` | 用基于画像的 AI 流程构建或修改日程 |
 | `rmd sync` | 为今天的 pomodoro/potato 生成任务分配，并先预览后确认 |
 | `rmd status [-v]` | 查看当前状态和今天日程，包含同步后的任务标题 |
-| `rmd add/ls/rm` | 管理会被 sync 使用的任务列表 |
-| `rmd history [n]` | 显示最近完成的任务活动（默认：5 条） |
+| `rmd add/ls/rm` | 管理会被 sync 使用的任务列表（`rm` 计为完成） |
+| `rmd cancel` / `rmd drop` | 移除任务但不计为完成（误添加取消，或主动放弃） |
+| `rmd history [n]` | 显示最近的任务活动；完成、取消、放弃会以不同样式分别展示（默认：5 条） |
 | `rmd track` | 记录习惯 |
 | `rmd ddl` | 管理截止日期；逾期两天及以上的条目会自动清理 |
 | `rmd view` | 生成 PDF 日程可视化 |

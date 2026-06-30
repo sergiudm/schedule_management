@@ -13,7 +13,7 @@ This package contains all CLI command implementations, organized by domain:
 - settings: Interactive TUI for editing settings.toml
 """
 
-from schedule_management.commands.tasks import add_task, delete_task, show_tasks
+from schedule_management.commands.tasks import add_task, delete_task, show_tasks, cancel_task, drop_task
 from schedule_management.commands.history import history_command
 from schedule_management.commands.deadlines import (
     add_deadline,
@@ -40,6 +40,8 @@ __all__ = [
     "add_task",
     "delete_task",
     "show_tasks",
+    "cancel_task",
+    "drop_task",
     # History command
     "history_command",
     # Deadline commands

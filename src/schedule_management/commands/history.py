@@ -38,15 +38,17 @@ from schedule_management.data import load_task_log
 
 def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    Pair 'added' and 'deleted' log entries into completed activities.
+    Pair 'added' log entries with their closing action into activities.
 
-    Walks the log chronologically, tracking open 'added' entries per
-    description. When a 'deleted' entry is found, it closes the most
-    recent matching open entry.
+    A closing action is one of 'deleted' (counts as completion), 'cancelled'
+    (added by mistake), or 'dropped' (gave up). Walks the log chronologically,
+    tracking open 'added' entries per description, and closes the most recent
+    matching open entry when a closing action is found.
 
     Returns:
         List of activity dicts with keys: description, priority,
-        started_at (datetime), ended_at (datetime).
+        started_at (datetime), ended_at (datetime), and status
+        ('completed' | 'cancelled' | 'dropped').
         Sorted by ended_at ascending.
     """
     open_adds: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -78,7 +80,7 @@ def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, A
                 "priority": task.get("priority", 0),
             })
 
-        elif action == "deleted":
+        elif action in ("deleted", "cancelled", "dropped"):
             if open_adds[description]:
                 add_record = open_adds[description].pop(0)
                 activities.append({
@@ -86,6 +88,7 @@ def _pair_task_activities(log_entries: list[dict[str, Any]]) -> list[dict[str, A
                     "priority": add_record["priority"],
                     "started_at": add_record["started_at"],
                     "ended_at": ts,
+                    "status": "completed" if action == "deleted" else action,
                 })
 
     activities.sort(key=lambda a: a["ended_at"])
@@ -122,6 +125,23 @@ def _format_duration(started: datetime, ended: datetime) -> str:
     if minutes > 0:
         parts.append(_t("{minutes}m").format(minutes=minutes))
     return " ".join(parts)
+
+
+def _activity_status_style(status: str) -> tuple[str, str, str, bool]:
+    """
+    Return (prefix_icon, status_tag, style, strike) for an activity status.
+
+    Each removal command records a distinct status so the three outcomes
+    (completed / cancelled / dropped) render visibly differently in history:
+    - completed: plain (priority-driven styling)
+    - cancelled: dim/strikethrough 'cancelled' (added by mistake)
+    - dropped:   yellow 'dropped' (gave up)
+    """
+    if status == "cancelled":
+        return "🚫", _t("cancelled"), "dim strike", True
+    if status == "dropped":
+        return "🏳️", _t("dropped"), "yellow", False
+    return "", "", "", False
 
 
 def history_command(args) -> int:
@@ -207,11 +227,16 @@ def history_command(args) -> int:
             started = activity["started_at"]
             ended = activity["ended_at"]
             duration = _format_duration(started, ended)
+            status = activity.get("status", "completed")
 
             color, icon = _priority_style(priority)
+            status_icon, status_tag, status_style, strike = _activity_status_style(status)
 
             name_text = Text()
-            name_text.append(f"  {description}", style="bold")
+            name_prefix = f"  {status_icon} {description}" if status_icon else f"  {description}"
+            name_text.append(name_prefix, style="bold")
+            if status_tag:
+                name_text.append(f"  ({status_tag})", style=status_style)
 
             priority_text = Text()
             priority_text.append(f"[{icon} {priority}]", style=f"bold {color}")

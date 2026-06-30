@@ -27,6 +27,8 @@ from schedule_management.commands import (
     add_task,
     delete_task,
     show_tasks,
+    cancel_task,
+    drop_task,
     # History command
     history_command,
     # Deadline commands
@@ -83,6 +85,8 @@ __all__ = [
     "add_task",
     "delete_task",
     "show_tasks",
+    "cancel_task",
+    "drop_task",
     # History command
     "history_command",
     # Deadline commands

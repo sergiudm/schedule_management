@@ -1359,6 +1359,43 @@ class TestTaskManagement:
         mock_print.assert_called_once()
         assert "❌ Error saving task:" in mock_print.call_args[0][0]
 
+    def test_save_new_task_type_persists_to_settings(self, tmp_path):
+        """_save_new_task_type writes a new type into settings.toml without clobbering it."""
+        from schedule_management.commands.tasks import _save_new_task_type
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text(
+            '[settings]\nlanguage = "en"\n\n[task_types]\n1 = "read papers"\n',
+            encoding="utf-8",
+        )
+
+        ok = _save_new_task_type(str(settings), "5", "writing")
+        assert ok is True
+
+        from schedule_management.config import ScheduleConfig
+
+        config = ScheduleConfig(str(settings))
+        assert config.task_types["1"] == "read papers"
+        assert config.task_types["5"] == "writing"
+        assert config.settings.get("language") == "en"
+
+    def test_save_new_task_type_overwrites_existing_name(self, tmp_path):
+        """Saving an existing type id replaces its name."""
+        from schedule_management.commands.tasks import _save_new_task_type
+        from schedule_management.config import ScheduleConfig
+
+        settings = tmp_path / "settings.toml"
+        settings.write_text(
+            '[task_types]\n1 = "read papers"\n2 = "gym work"\n',
+            encoding="utf-8",
+        )
+
+        ok = _save_new_task_type(str(settings), "2", "yoga")
+        assert ok is True
+
+        config = ScheduleConfig(str(settings))
+        assert config.task_types["2"] == "yoga"
+
     @patch("schedule_management.commands.tasks.load_tasks")
     @patch("schedule_management.commands.tasks.save_tasks")
     def test_add_task_with_postpone_success(self, mock_save_tasks, mock_load_tasks):
@@ -1524,14 +1561,14 @@ class TestTaskManagement:
 
         # 1. empty description, then valid description
         # 2. invalid priority (string), invalid priority (out of range), then valid priority
-        # 3. invalid task type (out of range), then valid task type
+        # 3. non-numeric task type (rejected), then valid task type
         mock_console_input.side_effect = [
             "",
             "Valid Task",
             "abc",
             "12",
             "6",
-            "99",
+            "x",
             "3"
         ]
 
@@ -1548,6 +1585,154 @@ class TestTaskManagement:
         assert saved_tasks[0]["description"] == "Valid Task"
         assert saved_tasks[0]["priority"] == 6
         assert saved_tasks[0]["type"] == "3"
+
+
+    @patch("schedule_management.commands.tasks._save_new_task_type")
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_creates_new_task_type(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty,
+        mock_save_new_type
+    ):
+        """Entering an unlisted number starts new-type creation and uses it."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+        mock_save_new_type.return_value = True
+
+        # description, priority, new type number 5, its name, then empty postpone (= 0)
+        mock_console_input.side_effect = ["Write novel", "7", "5", "writing", ""]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert saved_tasks[0]["type"] == "5"
+
+        # The new type should have been persisted under id "5" with the given name.
+        mock_save_new_type.assert_called_once()
+        save_args = mock_save_new_type.call_args[0]
+        assert save_args[1] == "5"
+        assert save_args[2] == "writing"
+
+    @patch("schedule_management.commands.tasks._save_new_task_type")
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_new_type_retries_empty_name(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty,
+        mock_save_new_type
+    ):
+        """An empty type name is rejected; creation proceeds once a name is given."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+        mock_save_new_type.return_value = True
+
+        # type number 6, empty name (retry), then valid name, empty postpone (= 0)
+        mock_console_input.side_effect = ["Read book", "5", "6", "", "reading", ""]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert saved_tasks[0]["type"] == "6"
+        assert mock_save_new_type.call_args[0][2] == "reading"
+
+    @patch("schedule_management.commands.tasks._save_new_task_type")
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_new_type_cancel_falls_back_to_prompt(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty,
+        mock_save_new_type
+    ):
+        """Cancelling new-type creation returns to the type selection prompt."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+        mock_save_new_type.return_value = True
+
+        # type number 7, then cancel name entry (KeyboardInterrupt),
+        # then pick existing type 2, then empty postpone (= 0)
+        mock_console_input.side_effect = ["Plan trip", "5", "7", KeyboardInterrupt(), "2", ""]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert saved_tasks[0]["type"] == "2"
+        mock_save_new_type.assert_not_called()
+
+    @patch("schedule_management.commands.tasks._save_new_task_type")
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_new_type_persist_failure_uses_type_anyway(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty,
+        mock_save_new_type
+    ):
+        """If the new type can't be saved, it is still applied to the current task."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+        mock_save_new_type.return_value = False
+
+        # type number 9, name, then empty postpone (= 0)
+        mock_console_input.side_effect = ["Sketch", "5", "9", "drawing", ""]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert saved_tasks[0]["type"] == "9"
+
+    @patch("schedule_management.commands.tasks.sys.stdin.isatty")
+    @patch("rich.console.Console.input")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    def test_add_task_interactive_new_type_rejects_non_numeric(
+        self, mock_save_tasks, mock_load_tasks, mock_console_input, mock_isatty
+    ):
+        """Non-numeric input at the type prompt is still rejected."""
+        mock_isatty.return_value = True
+        mock_load_tasks.return_value = []
+        mock_save_tasks.return_value = None
+
+        # type "abc" (rejected), then valid type 1, then empty postpone (= 0)
+        mock_console_input.side_effect = [" Jog", "5", "abc", "1", ""]
+
+        args = MagicMock()
+        args.task = None
+        args.priority = None
+
+        result = reminder.add_task(args)
+        assert result == 0
+
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert saved_tasks[0]["type"] == "1"
 
 
     @patch("schedule_management.commands.tasks.sys.stdin.isatty")
@@ -2428,6 +2613,149 @@ class TestTaskManagement:
         assert added_rows[4] == "💤 Task 3 (inc 10) (coming in 2 days)"
         assert added_rows[5] == "💤 Task 6 (inc 2) (coming in 2 days)"
 
+    @patch("schedule_management.commands.tasks.Table")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_show_tasks_filter_by_type_id(self, mock_load_tasks, mock_table_class):
+        """Test 'ls --type <id>' only shows rows of that type."""
+        mock_load_tasks.return_value = [
+            {"description": "Read paper", "priority": 8, "type": "1"},
+            {"description": "Lift weights", "priority": 6, "type": "2"},
+            {"description": "Review paper", "priority": 7, "type": "1"},
+        ]
+        mock_table = MagicMock()
+        mock_table_class.return_value = mock_table
+
+        args = MagicMock()
+        args.task_type = "1"
+
+        with patch("schedule_management.commands.tasks.Console") as mock_console_class:
+            mock_console = MagicMock()
+            mock_console_class.return_value = mock_console
+            result = reminder.show_tasks(args)
+
+        assert result == 0
+        added_rows = [
+            call.args[2].plain.split("\u2060")[0]
+            for call in mock_table.add_row.call_args_list
+            if len(call.args) >= 3
+        ]
+        # Only type '1' tasks are shown.
+        assert len(added_rows) == 2
+        assert added_rows[0] == "Read paper"
+        assert added_rows[1] == "Review paper"
+
+    @patch("schedule_management.commands.tasks.Table")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_show_tasks_filter_by_type_name_case_insensitive(self, mock_load_tasks, mock_table_class):
+        """Test 'ls --type <name>' matches case-insensitively."""
+        mock_load_tasks.return_value = [
+            {"description": "Read paper", "priority": 8, "type": "1"},
+            {"description": "Lift weights", "priority": 6, "type": "2"},
+        ]
+        mock_table = MagicMock()
+        mock_table_class.return_value = mock_table
+
+        args = MagicMock()
+        # 'GYM WORK' should resolve to type id '2'
+        args.task_type = "GYM WORK"
+
+        with patch("schedule_management.commands.tasks.Console") as mock_console_class:
+            mock_console = MagicMock()
+            mock_console_class.return_value = mock_console
+            result = reminder.show_tasks(args)
+
+        assert result == 0
+        added_rows = [
+            call.args[2].plain.split("\u2060")[0]
+            for call in mock_table.add_row.call_args_list
+            if len(call.args) >= 3
+        ]
+        assert len(added_rows) == 1
+        assert added_rows[0] == "Lift weights"
+
+    @patch("schedule_management.commands.tasks.Table")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_show_tasks_filter_preserves_full_list_ids(self, mock_load_tasks, mock_table_class):
+        """Filtered 'ls' keeps IDs aligned with the unfiltered list (what rm/cancel/drop resolve)."""
+        # Sorted by priority desc: B(9, t1), C(7, t2), A(3, t1) -> full IDs: 1,2,3
+        mock_load_tasks.return_value = [
+            {"description": "Task A", "priority": 3, "type": "1"},
+            {"description": "Task B", "priority": 9, "type": "1"},
+            {"description": "Task C", "priority": 7, "type": "2"},
+        ]
+        mock_table = MagicMock()
+        mock_table_class.return_value = mock_table
+
+        args = MagicMock()
+        # Filter to type 1 -> shows Task B (full id 1) and Task A (full id 3)
+        args.task_type = "1"
+
+        with patch("schedule_management.commands.tasks.Console") as mock_console_class:
+            mock_console = MagicMock()
+            mock_console_class.return_value = mock_console
+            result = reminder.show_tasks(args)
+
+        assert result == 0
+        # Each add_row call: (id, priority_visual, description)
+        row_ids = [call.args[0] for call in mock_table.add_row.call_args_list if len(call.args) >= 3]
+        assert row_ids == ["1", "3"]
+
+    @patch("schedule_management.commands.tasks.Console")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_show_tasks_filter_unknown_type_returns_error(self, mock_load_tasks, mock_console_class):
+        """Test 'ls --type <unknown>' prints an error and returns 1."""
+        mock_load_tasks.return_value = [{"description": "X", "priority": 5, "type": "1"}]
+
+        args = MagicMock()
+        args.task_type = "nonexistent"
+
+        result = reminder.show_tasks(args)
+
+        assert result == 1
+        printed = " ".join(str(c.args[0]) for c in mock_console_class.return_value.print.call_args_list if c.args)
+        assert "nonexistent" in printed
+
+    @patch("schedule_management.commands.tasks.Console")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_show_tasks_filter_no_matching_tasks(self, mock_load_tasks, mock_console_class):
+        """Test 'ls --type' shows a friendly empty message when no tasks match."""
+        mock_load_tasks.return_value = [
+            {"description": "Read paper", "priority": 8, "type": "1"},
+        ]
+
+        args = MagicMock()
+        # Type 2 exists (default 'gym work') but no task uses it.
+        args.task_type = "2"
+
+        result = reminder.show_tasks(args)
+
+        assert result == 0
+        printed = " ".join(str(c.args[0]) for c in mock_console_class.return_value.print.call_args_list if c.args)
+        assert "gym work" in printed
+
+    def test_ls_parser_accepts_type_filter(self):
+        """Test parser wires '-t/--type' and stores it as task_type."""
+        parser = reminder.create_parser()
+
+        args_short = parser.parse_args(["ls", "-t", "1"])
+        assert args_short.task_type == "1"
+
+        args_long = parser.parse_args(["ls", "--type", "coding"])
+        assert args_long.task_type == "coding"
+
+        args_none = parser.parse_args(["ls"])
+        assert args_none.task_type is None
+        assert args_none.func is reminder.show_tasks
+
+    def test_resolve_task_type_id_helper(self):
+        """Test the type-id resolution helper directly (id and name)."""
+        from schedule_management.commands.tasks import _resolve_task_type_id
+
+        types = {"1": "read papers", "2": "gym work"}
+        assert _resolve_task_type_id("1", types) == "1"
+        assert _resolve_task_type_id("gym work", types) == "2"
+        assert _resolve_task_type_id("GYM WORK", types) == "2"  # case-insensitive
+        assert _resolve_task_type_id("zzz", types) is None  # unknown
 
     @patch("schedule_management.commands.tasks.log_task_action")
     @patch("schedule_management.commands.tasks.save_procrastinate_list")
@@ -2463,6 +2791,237 @@ class TestTaskManagement:
         saved_list = mock_save_procrastinate_list.call_args[0][0]
         assert "Review code" not in saved_list
         assert "Write tests" in saved_list
+
+
+class TestCancelDropCommands:
+    """Test the 'cancel' and 'drop' commands.
+
+    Both behave like 'rm' (remove the task, sync the procrastinate list) but
+    record a distinct history action so they are NOT counted as completion.
+    """
+
+    @patch("schedule_management.commands.tasks.log_task_action")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_cancel_task_success(self, mock_load_tasks, mock_save_tasks, mock_log_task_action):
+        """Test cancelling a task logs 'cancelled' (not 'deleted') and saves."""
+        mock_load_tasks.return_value = [
+            {"description": "Typo task", "priority": 5},
+            {"description": "Real task", "priority": 8},
+        ]
+        mock_save_tasks.return_value = None
+
+        args = MagicMock()
+        args.tasks = ["Typo task"]
+
+        result = reminder.cancel_task(args)
+
+        assert result == 0
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert not any(t["description"] == "Typo task" for t in saved_tasks)
+        # Must record 'cancelled', never 'deleted'
+        mock_log_task_action.assert_called_once()
+        assert mock_log_task_action.call_args[0][0] == "cancelled"
+
+    @patch("schedule_management.commands.tasks.log_task_action")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_drop_task_success(self, mock_load_tasks, mock_save_tasks, mock_log_task_action):
+        """Test dropping a task logs 'dropped' (not 'deleted') and saves."""
+        mock_load_tasks.return_value = [
+            {"description": "Side project", "priority": 4},
+            {"description": "Real task", "priority": 8},
+        ]
+        mock_save_tasks.return_value = None
+
+        args = MagicMock()
+        args.tasks = ["Side project"]
+
+        result = reminder.drop_task(args)
+
+        assert result == 0
+        mock_save_tasks.assert_called_once()
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert not any(t["description"] == "Side project" for t in saved_tasks)
+        mock_log_task_action.assert_called_once()
+        assert mock_log_task_action.call_args[0][0] == "dropped"
+
+    @patch("schedule_management.commands.tasks.log_task_action")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_cancel_drop_do_not_log_deleted(
+        self, mock_load_tasks, mock_save_tasks, mock_log_task_action
+    ):
+        """Both commands must never record the 'deleted' (completion) action."""
+        mock_load_tasks.return_value = [
+            {"description": "Typo task", "priority": 5},
+            {"description": "Side project", "priority": 4},
+            {"description": "Other", "priority": 9},
+        ]
+        mock_save_tasks.return_value = None
+
+        cancel_args = MagicMock()
+        cancel_args.tasks = ["Typo task"]
+        drop_args = MagicMock()
+        drop_args.tasks = ["Side project"]
+
+        reminder.cancel_task(cancel_args)
+        reminder.drop_task(drop_args)
+
+        actions = [call.args[0] for call in mock_log_task_action.call_args_list]
+        assert "deleted" not in actions
+        assert actions.count("cancelled") == 1
+        assert actions.count("dropped") == 1
+
+    @patch("schedule_management.commands.tasks.log_task_action")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_cancel_task_by_id(self, mock_load_tasks, mock_save_tasks, mock_log_task_action):
+        """Test cancelling a task by ID resolves against the sorted list."""
+        mock_load_tasks.return_value = [
+            {"description": "High", "priority": 9},
+            {"description": "Low", "priority": 2},
+        ]
+        mock_save_tasks.return_value = None
+
+        args = MagicMock()
+        # ID 1 = highest priority = "High"
+        args.tasks = ["1"]
+
+        result = reminder.cancel_task(args)
+
+        assert result == 0
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert saved_tasks[0]["description"] == "Low"
+
+    @patch("schedule_management.commands.tasks.log_task_action")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_drop_task_by_id(self, mock_load_tasks, mock_save_tasks, mock_log_task_action):
+        """Test dropping a task by ID resolves against the sorted list."""
+        mock_load_tasks.return_value = [
+            {"description": "High", "priority": 9},
+            {"description": "Low", "priority": 2},
+        ]
+        mock_save_tasks.return_value = None
+
+        args = MagicMock()
+        # ID 2 = lowest priority = "Low"
+        args.tasks = ["2"]
+
+        result = reminder.drop_task(args)
+
+        assert result == 0
+        saved_tasks = mock_save_tasks.call_args[0][0]
+        assert len(saved_tasks) == 1
+        assert saved_tasks[0]["description"] == "High"
+
+    @patch("builtins.print")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_cancel_task_not_found(self, mock_load_tasks, mock_save_tasks, mock_print):
+        """Test cancelling a non-existent task returns 1 and prints an error."""
+        mock_load_tasks.return_value = [{"description": "Real task", "priority": 8}]
+        mock_save_tasks.return_value = None
+
+        args = MagicMock()
+        args.tasks = ["Ghost task"]
+
+        result = reminder.cancel_task(args)
+
+        assert result == 1
+        mock_save_tasks.assert_not_called()
+        printed = " ".join(str(c.args[0]) for c in mock_print.call_args_list)
+        assert "Ghost task" in printed
+
+    @patch("builtins.print")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_drop_task_no_tasks(self, mock_load_tasks, mock_print):
+        """Test dropping when there are no tasks returns 1."""
+        mock_load_tasks.return_value = []
+
+        args = MagicMock()
+        args.tasks = ["whatever"]
+
+        result = reminder.drop_task(args)
+
+        assert result == 1
+
+    @patch("builtins.print")
+    @patch("schedule_management.commands.tasks.log_task_action")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_cancel_task_save_error(self, mock_load_tasks, mock_save_tasks, mock_log_task_action, mock_print):
+        """Test cancel returns 1 when saving fails."""
+        mock_load_tasks.return_value = [{"description": "Typo", "priority": 5}]
+        mock_save_tasks.side_effect = Exception("Save failed")
+
+        args = MagicMock()
+        args.tasks = ["Typo"]
+
+        result = reminder.cancel_task(args)
+
+        assert result == 1
+        printed = " ".join(str(c.args[0]) for c in mock_print.call_args_list)
+        assert "Save failed" in printed
+
+    @patch("schedule_management.commands.tasks.log_task_action")
+    @patch("schedule_management.commands.tasks.save_procrastinate_list")
+    @patch("schedule_management.commands.tasks.load_procrastinate_list")
+    @patch("schedule_management.commands.tasks.save_tasks")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    def test_drop_task_removes_from_procrastinate_list(
+        self,
+        mock_load_tasks,
+        mock_save_tasks,
+        mock_load_procrastinate_list,
+        mock_save_procrastinate_list,
+        mock_log_task_action,
+    ):
+        """Test that dropping a task also removes it from the procrastinate list."""
+        mock_load_tasks.return_value = [
+            {"description": "Review code", "priority": 9},
+            {"description": "Write tests", "priority": 5},
+        ]
+        mock_load_procrastinate_list.return_value = {"Review code", "Write tests"}
+        mock_save_tasks.return_value = None
+
+        args = MagicMock()
+        args.tasks = ["Review code"]
+
+        result = reminder.drop_task(args)
+
+        assert result == 0
+        mock_log_task_action.assert_called_once()
+        assert mock_log_task_action.call_args[0][0] == "dropped"
+        mock_save_tasks.assert_called_once()
+        mock_save_procrastinate_list.assert_called_once()
+
+        saved_list = mock_save_procrastinate_list.call_args[0][0]
+        assert "Review code" not in saved_list
+        assert "Write tests" in saved_list
+
+    def test_cancel_parser_wiring(self):
+        """Test parser routes 'cancel' to cancel_task."""
+        parser = reminder.create_parser()
+        args = parser.parse_args(["cancel", "some task"])
+
+        assert args.command == "cancel"
+        assert args.tasks == ["some task"]
+        assert args.func is reminder.cancel_task
+
+    def test_drop_parser_wiring(self):
+        """Test parser routes 'drop' to drop_task."""
+        parser = reminder.create_parser()
+        args = parser.parse_args(["drop", "1", "2"])
+
+        assert args.command == "drop"
+        assert args.tasks == ["1", "2"]
+        assert args.func is reminder.drop_task
 
 
 class TestMainFunctions:
@@ -3152,6 +3711,71 @@ class TestHistoryCommand:
         assert len(activities) == 2
         assert activities[0]["priority"] == 7
         assert activities[1]["priority"] == 9
+
+    def test_pair_task_activities_stamps_status(self):
+        """Test that cancelled/dropped actions stamp a distinct status."""
+        from schedule_management.commands.history import _pair_task_activities
+
+        entries = [
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "action": "added",
+                "task": {"description": "Done task", "priority": 8},
+            },
+            {
+                "timestamp": "2026-06-01T10:00:00",
+                "action": "deleted",
+                "task": {"description": "Done task", "priority": 8},
+            },
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "action": "added",
+                "task": {"description": "Mistake task", "priority": 5},
+            },
+            {
+                "timestamp": "2026-06-01T11:00:00",
+                "action": "cancelled",
+                "task": {"description": "Mistake task", "priority": 5},
+            },
+            {
+                "timestamp": "2026-06-01T09:00:00",
+                "action": "added",
+                "task": {"description": "Give up task", "priority": 3},
+            },
+            {
+                "timestamp": "2026-06-01T12:00:00",
+                "action": "dropped",
+                "task": {"description": "Give up task", "priority": 3},
+            },
+        ]
+
+        activities = _pair_task_activities(entries)
+
+        assert len(activities) == 3
+        by_desc = {a["description"]: a for a in activities}
+        assert by_desc["Done task"]["status"] == "completed"
+        assert by_desc["Mistake task"]["status"] == "cancelled"
+        assert by_desc["Give up task"]["status"] == "dropped"
+
+    def test_activity_status_style_for_each_status(self):
+        """Test that completed/cancelled/dropped map to distinct render styles."""
+        from schedule_management.commands.history import _activity_status_style
+
+        # completed: no special icon/tag/strike
+        icon, tag, style, strike = _activity_status_style("completed")
+        assert icon == ""
+        assert tag == ""
+        assert strike is False
+
+        # cancelled: explicit icon + strike-through
+        icon, tag, style, strike = _activity_status_style("cancelled")
+        assert icon == "🚫"
+        assert strike is True
+
+        # dropped: explicit icon, no strike
+        icon, tag, style, strike = _activity_status_style("dropped")
+        assert icon == "🏳️"
+        assert strike is False
 
     def test_format_duration(self):
         """Test duration formatting helper."""
