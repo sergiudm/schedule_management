@@ -55,6 +55,82 @@ from schedule_management.data import (
 from schedule_management.commands.settings import DEFAULT_TASK_TYPES
 
 
+# Curated Rich color names that render distinctly in standard/256-color terminals.
+# Intentionally excludes "white" (poor contrast) and invalid names like "pink".
+_TASK_TYPE_BASE_COLORS: list[str] = [
+    "red",
+    "green",
+    "blue",
+    "yellow",
+    "magenta",
+    "cyan",
+    "bright_blue",
+    "bright_green",
+    "bright_red",
+    "bright_yellow",
+    "bright_magenta",
+    "bright_cyan",
+    "orange3",
+    "purple",
+    "deep_pink1",
+    "gold1",
+    "dark_orange",
+    "navy_blue",
+    "spring_green3",
+    "deep_sky_blue1",
+    "light_sea_green",
+    "hot_pink",
+    "violet",
+    "light_salmon1",
+    "chartreuse3",
+    "khaki1",
+    "cornflower_blue",
+    "aquamarine1",
+    "orchid",
+    "turquoise2",
+    "salmon1",
+    "medium_purple",
+    "sea_green3",
+    "steel_blue1",
+    "light_coral",
+    "dark_violet",
+    "green_yellow",
+    "dodger_blue1",
+    "orange1",
+    "slate_blue1",
+]
+
+
+def _task_type_colors(sorted_type_ids: list[str]) -> dict[str, str]:
+    """
+    Assign a unique Rich-compatible color to each task type id.
+
+    Uses a curated named/256-color palette when it is large enough. When there
+    are more types than palette entries, generates evenly spaced HSL hex colors
+    so no two types share a color (avoids the old ``idx % len(COLORS)`` wrap).
+    """
+    total = len(sorted_type_ids)
+    if total == 0:
+        return {}
+
+    if total <= len(_TASK_TYPE_BASE_COLORS):
+        return {
+            tid: _TASK_TYPE_BASE_COLORS[idx]
+            for idx, tid in enumerate(sorted_type_ids)
+        }
+
+    import colorsys
+
+    colors: dict[str, str] = {}
+    for idx, tid in enumerate(sorted_type_ids):
+        # Even hue spacing around the color wheel; fixed lightness/saturation
+        # keep labels readable on both light and dark terminals.
+        hue = idx / total
+        r, g, b = colorsys.hls_to_rgb(hue, 0.55, 0.85)
+        colors[tid] = f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
+    return colors
+
+
 # =============================================================================
 # ADD TASK COMMAND
 # =============================================================================
@@ -758,10 +834,7 @@ def show_tasks(args) -> int:
             return 1
         filter_type_id = resolved
 
-    COLORS = ["red", "green", "blue", "yellow", "magenta", "cyan", "white", "bright_blue", "bright_green", "bright_red"]
-    type_colors = {}
-    for idx, tid in enumerate(sorted_type_ids):
-        type_colors[tid] = COLORS[idx % len(COLORS)]
+    type_colors = _task_type_colors(sorted_type_ids)
 
     # Create table
     table = Table(

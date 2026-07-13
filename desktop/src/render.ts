@@ -12,6 +12,23 @@ import type { BridgeClient, Snapshot, SyncProposal } from "./types";
 type SvgAttrs = Record<string, string | number>;
 type SvgNode = readonly [tag: string, attrs: SvgAttrs, children?: readonly SvgNode[]];
 
+function getTaskTypeStyle(typeId: string, taskTypes: Record<string, string>): string {
+  if (!taskTypes) return "";
+  const sortedKeys = Object.keys(taskTypes).sort((a, b) => {
+    const na = Number.parseInt(a, 10);
+    const nb = Number.parseInt(b, 10);
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
+    return a.localeCompare(b);
+  });
+  const index = sortedKeys.indexOf(typeId);
+  if (index === -1) return "";
+
+  const total = sortedKeys.length;
+  const hue = total > 0 ? (index * (360 / total)) % 360 : 0;
+
+  return `style="background: hsl(${hue}, 65%, 92%); color: hsl(${hue}, 75%, 32%); border: 1px solid hsl(${hue}, 75%, 85%);"`;
+}
+
 const refreshIcon = renderIcon(RefreshCw, { width: 16, height: 16 });
 const plusIcon = renderIcon(Plus, { width: 16, height: 16 });
 const trashIcon = renderIcon(Trash2, { width: 16, height: 16 });
@@ -225,8 +242,9 @@ function renderQueue(snapshot: Snapshot): string {
         label = `\u23F3 ${label}${escapeHtml(suffix)}`;
       }
 
+      const badgeStyle = getTaskTypeStyle(task.type, snapshot.taskTypes || {});
       const typeBadge = task.typeName
-        ? `<span class="type-badge">${escapeHtml(task.typeName)}</span>`
+        ? `<span class="type-badge" ${badgeStyle}>${escapeHtml(task.typeName)}</span>`
         : "";
 
       return `
@@ -296,14 +314,16 @@ function renderQuickAdd(snapshot: Snapshot, state: AppState): string {
             if (!Number.isNaN(na) && !Number.isNaN(nb)) return na - nb;
             return a.localeCompare(b);
           })
-          .map(
-            ([id, name]) => `
+          .map(([id, name]) => {
+            const badgeStyle = getTaskTypeStyle(id, snapshot.taskTypes || {});
+            return `
               <div class="type-row">
+                <span class="type-color-dot" ${badgeStyle}></span>
                 <input data-testid="type-key" type="text" value="${escapeHtml(id)}" readonly />
                 <input data-testid="type-name" type="text" value="${escapeHtml(name)}" data-type-key="${escapeHtml(id)}" />
               </div>
-            `
-          )
+            `;
+          })
           .join("")}
         <button data-testid="type-editor-save" class="secondary-button" type="button">Save Types</button>
       </div>

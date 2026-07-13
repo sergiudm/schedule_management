@@ -548,10 +548,18 @@ textarea:focus {
 
 .type-row {
   display: grid;
-  grid-template-columns: 50px minmax(0, 1fr);
+  grid-template-columns: 14px 50px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   margin-bottom: 6px;
+}
+
+.type-color-dot {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  box-sizing: border-box;
 }
 
 .type-row input[readonly] {

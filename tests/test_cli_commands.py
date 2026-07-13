@@ -2733,6 +2733,67 @@ class TestTaskManagement:
         printed = " ".join(str(c.args[0]) for c in mock_console_class.return_value.print.call_args_list if c.args)
         assert "gym work" in printed
 
+    def test_task_type_colors_unique_for_small_and_large_sets(self):
+        """Type colors must not wrap/repeat once type count exceeds the palette."""
+        from schedule_management.commands.tasks import (
+            _TASK_TYPE_BASE_COLORS,
+            _task_type_colors,
+        )
+
+        small_ids = [str(i) for i in range(1, 5)]
+        small = _task_type_colors(small_ids)
+        assert list(small.values()) == _TASK_TYPE_BASE_COLORS[:4]
+        assert len(set(small.values())) == 4
+
+        # Exactly palette-sized: still unique named colors, no wrap.
+        exact_ids = [str(i) for i in range(1, len(_TASK_TYPE_BASE_COLORS) + 1)]
+        exact = _task_type_colors(exact_ids)
+        assert len(exact) == len(_TASK_TYPE_BASE_COLORS)
+        assert len(set(exact.values())) == len(_TASK_TYPE_BASE_COLORS)
+
+        # Beyond palette: HSL hex colors, all unique (old bug was idx % 10).
+        large_n = len(_TASK_TYPE_BASE_COLORS) + 25
+        large_ids = [str(i) for i in range(1, large_n + 1)]
+        large = _task_type_colors(large_ids)
+        assert len(large) == large_n
+        assert len(set(large.values())) == large_n
+        assert all(c.startswith("#") and len(c) == 7 for c in large.values())
+
+    @patch("schedule_management.commands.tasks.Console")
+    @patch("schedule_management.commands.tasks.load_tasks")
+    @patch("schedule_management.commands.tasks.ScheduleConfig")
+    def test_show_tasks_color_duplication(self, mock_config_class, mock_load_tasks, mock_console_class):
+        """Test that all task types are assigned different colors without duplicates."""
+        mock_config = MagicMock()
+        mock_config.task_types = {str(i): f"type_{i}" for i in range(1, 41)}
+        mock_config_class.return_value = mock_config
+
+        mock_load_tasks.return_value = [
+            {"description": f"Task {i}", "priority": 5, "type": str(i)}
+            for i in range(1, 41)
+        ]
+
+        args = MagicMock()
+        args.task_type = None
+
+        with patch("schedule_management.commands.tasks.Table") as mock_table_class:
+            mock_table = MagicMock()
+            mock_table_class.return_value = mock_table
+            result = reminder.show_tasks(args)
+
+        assert result == 0
+
+        colors = []
+        for call in mock_table.add_row.call_args_list:
+            if len(call.args) >= 2:
+                prio_visual = call.args[1]
+                if prio_visual.startswith("["):
+                    color = prio_visual[1:prio_visual.find("]")]
+                    colors.append(color)
+
+        assert len(colors) == 40
+        assert len(set(colors)) == 40
+
     def test_ls_parser_accepts_type_filter(self):
         """Test parser wires '-t/--type' and stores it as task_type."""
         parser = reminder.create_parser()
