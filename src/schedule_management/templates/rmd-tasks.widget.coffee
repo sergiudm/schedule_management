@@ -71,6 +71,30 @@ style: """
     color: #888
     font-style: italic
 
+  .delete-btn
+    background: transparent
+    border: none
+    color: #666
+    cursor: pointer
+    font-size: 11px
+    padding: 2px 6px
+    border-radius: 4px
+    transition: all 0.2s ease
+    flex-shrink: 0
+
+  .delete-btn:hover
+    color: #ff6b6b
+    background: rgba(255, 107, 107, 0.15)
+
+  .delete-btn.confirming
+    color: #ff6b6b
+    background: rgba(255, 107, 107, 0.25)
+    font-weight: 600
+
+  .delete-btn.executing
+    color: #888
+    cursor: wait
+
   .footer
     margin-top: 10px
     text-align: right
@@ -126,6 +150,7 @@ render: (output) ->
         <span class="task-id">#{task.id}</span>
         <span class="task-priority #{prioClass}">#{task.priority}</span>
         <span class="#{descClass}">#{cleanDesc}</span>
+        <button class="delete-btn" data-id="#{task.id}" title="Delete task">✕</button>
       </div>
     """
 
@@ -133,3 +158,30 @@ render: (output) ->
     html += "<div class='footer'>#{total} tasks</div>"
 
   return html
+
+afterRender: (domEl) ->
+  domEl.addEventListener 'click', (e) =>
+    btn = e.target.closest('.delete-btn')
+    return unless btn
+
+    taskId = btn.getAttribute('data-id')
+    return unless taskId
+
+    if btn.classList.contains('confirming')
+      if btn._resetTimer
+        clearTimeout(btn._resetTimer)
+        btn._resetTimer = null
+      btn.classList.remove('confirming')
+      btn.classList.add('executing')
+      btn.innerText = '...'
+      @run "{{RMD_PATH}} rm #{taskId}", (err, stdout) =>
+        @refresh()
+    else
+      btn.classList.add('confirming')
+      btn.innerText = 'Confirm?'
+      btn._resetTimer = setTimeout (->
+        btn.classList.remove('confirming')
+        btn.innerText = '✕'
+        btn._resetTimer = null
+      ), 3000
+

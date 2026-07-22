@@ -46,12 +46,22 @@ style: """
     word-break: break-word
     overflow-wrap: break-word
 
-  .prio-high
-    color: #ff6b6b
-  .prio-mid
-    color: #ffd93d
-  .prio-low
-    color: #6bc5ff
+  .type-1
+    color: #ff6b6b   // red
+  .type-2
+    color: #51cf66   // green
+  .type-3
+    color: #6bc5ff   // blue
+  .type-4
+    color: #ffd93d   // yellow
+  .type-5
+    color: #cc5de8   // magenta
+  .type-6
+    color: #15aabf   // cyan
+  .type-7
+    color: #e0e0e0   // white
+  .type-default
+    color: #e0e0e0
 
   .overdue
     color: #ff6b6b
@@ -60,6 +70,30 @@ style: """
   .postponed
     color: #888
     font-style: italic
+
+  .delete-btn
+    background: transparent
+    border: none
+    color: #666
+    cursor: pointer
+    font-size: 11px
+    padding: 2px 6px
+    border-radius: 4px
+    transition: all 0.2s ease
+    flex-shrink: 0
+
+  .delete-btn:hover
+    color: #ff6b6b
+    background: rgba(255, 107, 107, 0.15)
+
+  .delete-btn.confirming
+    color: #ff6b6b
+    background: rgba(255, 107, 107, 0.25)
+    font-weight: 600
+
+  .delete-btn.executing
+    color: #888
+    cursor: wait
 
   .footer
     margin-top: 10px
@@ -100,20 +134,23 @@ render: (output) ->
   html = '<div class="header">📋 Tasks</div>'
 
   for task in tasks
-    prioNum = parseInt(task.priority.match(/\((\d+)\)/)?[1] or '0')
-    prioClass = if prioNum >= 8 then 'prio-high' else if prioNum >= 5 then 'prio-mid' else 'prio-low'
+    typeMatch = task.desc.match(/\u2060(\d+)/)
+    typeId = if typeMatch then typeMatch[1] else 'default'
+    prioClass = "type-#{typeId}"
+    cleanDesc = task.desc.replace(/\u2060\d+/, '')
 
     descClass = 'task-desc'
-    if task.desc.indexOf('⏳') >= 0
+    if cleanDesc.indexOf('⏳') >= 0
       descClass += ' overdue'
-    else if task.desc.indexOf('💤') >= 0
+    else if cleanDesc.indexOf('💤') >= 0
       descClass += ' postponed'
 
     html += """
       <div class="task-row">
         <span class="task-id">#{task.id}</span>
         <span class="task-priority #{prioClass}">#{task.priority}</span>
-        <span class="#{descClass}">#{task.desc}</span>
+        <span class="#{descClass}">#{cleanDesc}</span>
+        <button class="delete-btn" data-id="#{task.id}" title="Delete task">✕</button>
       </div>
     """
 
@@ -121,3 +158,29 @@ render: (output) ->
     html += "<div class='footer'>#{total} tasks</div>"
 
   return html
+
+afterRender: (domEl) ->
+  domEl.addEventListener 'click', (e) =>
+    btn = e.target.closest('.delete-btn')
+    return unless btn
+
+    taskId = btn.getAttribute('data-id')
+    return unless taskId
+
+    if btn.classList.contains('confirming')
+      if btn._resetTimer
+        clearTimeout(btn._resetTimer)
+        btn._resetTimer = null
+      btn.classList.remove('confirming')
+      btn.classList.add('executing')
+      btn.innerText = '...'
+      @run "/Users/sn/SCHEDULE_MANAGEMENT/rmd rm #{taskId}", (err, stdout) =>
+        @refresh()
+    else
+      btn.classList.add('confirming')
+      btn.innerText = 'Confirm?'
+      btn._resetTimer = setTimeout (->
+        btn.classList.remove('confirming')
+        btn.innerText = '✕'
+        btn._resetTimer = null
+      ), 3000
