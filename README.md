@@ -99,23 +99,25 @@ the specific assigned event, for example `pomodoro: Finish proposal draft`.
 repository, it pulls the latest schedule changes first; otherwise it skips the
 git step and reloads your local files as-is.
 
-### 5. Optional macOS Daily Command Center
+### 5. Optional macOS Desktop Tools (Daily Command Center & Übersicht Widget)
 
-The repository also includes a Tauri 2 desktop app for macOS. It uses the same
-local config, tasks, deadlines, habits, and sync overlay files as the CLI, but
-presents them as a daily command center with quick task/deadline entry, habit
-checks, and `rmd sync` proposal review.
+Schedule Everything provides desktop integrations for macOS users:
 
-You can download a pre-built DMG from the GitHub Releases or build it yourself:
+- **Tauri 2 Daily Command Center**: A desktop app that uses the same local config, tasks, deadlines, habits, and sync overlay files as the CLI, presenting them as a daily command center with quick task/deadline entry, habit checks, and `rmd sync` proposal review.
 
-```bash
-npm install
-npm run tauri:dev
-npm run tauri:build
-```
+  You can download a pre-built DMG from GitHub Releases or build it yourself:
+  ```bash
+  npm install
+  npm run tauri:dev
+  npm run tauri:build
+  ```
+  `npm run tauri:build` packages the Python JSON bridge as a sidecar and writes the macOS bundles under `src-tauri/target/release/bundle/`.
 
-`npm run tauri:build` packages the Python JSON bridge as a sidecar and writes
-the macOS bundles under `src-tauri/target/release/bundle/`.
+- **Übersicht Desktop Widget**: Displays your task list as a live, interactive desktop wallpaper widget (`rmd-tasks.widget`).
+  - **Interactive Task Deletion**: Tasks displayed on the desktop widget can be deleted directly via GUI actions. Each task row includes an inline delete button `[✕]`.
+    - **First click**: The button transforms to `[Confirm?]` with a red highlight for a 3-second safety window.
+    - **Second click**: Confirms deletion, executes `rmd rm <id>` in the background, and immediately re-renders the widget.
+    - **Auto-reset**: If `[Confirm?]` is not clicked within 3 seconds, it safely resets to `[✕]`.
 
 > [!TIP]
 > **macOS "App is damaged" Workaround**: Since pre-built DMGs are unsigned, macOS Gatekeeper may show a warning saying the app is damaged. You can easily fix this by dragging the app to `/Applications` and running:

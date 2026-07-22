@@ -134,6 +134,21 @@ auto_cleanup_days = 30          # Auto-cleanup completed tasks after N days
 show_completed = false          # Show completed tasks in list
 ```
 
+## Desktop Widget Section (macOS)
+
+Configure the macOS Übersicht desktop widget behavior:
+
+```toml
+[desktop_widget]
+enabled = true                  # Show task list as an Übersicht desktop widget
+refresh_frequency = 30          # Widget refresh interval in seconds (5 - 3600)
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `enabled` | boolean | `true` | When `true`, enables rendering the active task list on the macOS desktop via Übersicht. |
+| `refresh_frequency` | integer | `30` | Refresh interval in seconds (between 5 and 3600 seconds). |
+
 ## Sound File Configuration
 
 ### macOS System Sounds

@@ -119,7 +119,9 @@ pip install schedule-management
 ```
 After installation, follow steps 3-6 from the "Manual Installation" section above.
 
-## Optional macOS Desktop App
+## Optional macOS Desktop Tools
+
+### Daily Command Center App
 
 The source tree includes a Tauri 2 desktop app named **Schedule Everything**.
 It is a daily command center for the same local files used by the CLI:
@@ -145,6 +147,13 @@ then runs the Tauri release build. Outputs are written to:
 src-tauri/target/release/bundle/macos/Schedule Everything.app
 src-tauri/target/release/bundle/dmg/Schedule Everything_0.1.0_<arch>.dmg
 ```
+
+### Übersicht Desktop Widget
+
+Schedule Everything also provides an interactive macOS desktop widget (`rmd-tasks.widget`) powered by [Übersicht](https://tracesof.net/uebersicht/).
+
+- **Installation**: Prompts automatically during `./install.sh` on macOS, or can be installed via `python -c "from schedule_management.desktop_widget import install_widget; install_widget()"`.
+- **Interactive Deletion**: Tasks rendered on your desktop wallpaper can be deleted directly via GUI clicks with a two-step inline confirmation (`[✕]` button transforms to `[Confirm?]` on first click, executing `rmd rm <id>` and re-rendering on second click).
 
 ## Verifying Installation
 
